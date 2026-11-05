@@ -1,5 +1,6 @@
 package com.corebank.customer;
 
+import com.corebank.common.DbTime;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -43,7 +44,7 @@ public class Customer {
 		this.username = username;
 		this.passwordHash = passwordHash;
 		this.name = name;
-		this.createdAt = LocalDateTime.now();
+		this.createdAt = DbTime.now();
 	}
 
 	/** 이미 해시한 비밀번호로 만든다. 원문을 받지 않아 실수로 원문이 저장될 수 없다. */

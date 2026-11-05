@@ -1,5 +1,6 @@
 package com.corebank.ledger;
 
+import com.corebank.common.DbTime;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -58,7 +59,7 @@ public class LedgerTransaction {
 		this.transferId = transferId;
 		this.amount = amount;
 		this.balanceAfter = balanceAfter;
-		this.createdAt = LocalDateTime.now();
+		this.createdAt = DbTime.now();
 	}
 
 	static LedgerTransaction deposit(Long accountId, long amount, long balanceAfter) {

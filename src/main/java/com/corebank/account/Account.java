@@ -1,5 +1,6 @@
 package com.corebank.account;
 
+import com.corebank.common.DbTime;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -73,12 +74,12 @@ public class Account {
 
 	/** 새 계좌를 만든다. 이 메서드로만 생성되므로 모든 계좌는 잔액 0, ACTIVE 상태로 시작한다. */
 	public static Account open(String accountNumber, String ownerName) {
-		return new Account(accountNumber, ownerName, null, LocalDateTime.now());
+		return new Account(accountNumber, ownerName, null, DbTime.now());
 	}
 
 	/** 고객 명의로 새 계좌를 만든다. 예금주 이름은 고객 이름이다. */
 	public static Account openFor(String accountNumber, String ownerName, Long customerId) {
-		return new Account(accountNumber, ownerName, customerId, LocalDateTime.now());
+		return new Account(accountNumber, ownerName, customerId, DbTime.now());
 	}
 
 	/** 이 고객의 계좌인지 */
@@ -135,7 +136,7 @@ public class Account {
 		long payout = balance;
 		balance = 0;
 		status = AccountStatus.CLOSED;
-		closedAt = LocalDateTime.now();
+		closedAt = DbTime.now();
 		return payout;
 	}
 

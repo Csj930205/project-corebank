@@ -1,5 +1,6 @@
 package com.corebank.transfer;
 
+import com.corebank.common.DbTime;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -44,7 +45,7 @@ public class Transfer {
 		this.fromAccountId = fromAccountId;
 		this.toAccountId = toAccountId;
 		this.amount = amount;
-		this.createdAt = LocalDateTime.now();
+		this.createdAt = DbTime.now();
 	}
 
 	static Transfer of(Long fromAccountId, Long toAccountId, long amount) {

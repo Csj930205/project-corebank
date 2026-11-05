@@ -1,5 +1,6 @@
 package com.corebank.idempotency;
 
+import com.corebank.common.DbTime;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -50,7 +51,7 @@ public class IdempotencyRecord {
 		this.operation = operation;
 		this.requestFingerprint = requestFingerprint;
 		this.resourceId = resourceId;
-		this.createdAt = LocalDateTime.now();
+		this.createdAt = DbTime.now();
 	}
 
 }
