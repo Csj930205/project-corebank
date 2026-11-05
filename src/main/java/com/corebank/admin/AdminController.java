@@ -1,5 +1,10 @@
 package com.corebank.admin;
 
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.http.HttpStatus;
+import com.corebank.auth.LoginThrottle;
 import com.corebank.account.Account;
 import com.corebank.account.AccountResponse;
 import com.corebank.account.AccountStatus;
@@ -22,9 +27,11 @@ import java.util.List;
 public class AdminController {
 
 	private final AdminQueryService queryService;
+	private final LoginThrottle loginThrottle;
 
-	public AdminController(AdminQueryService queryService) {
+	public AdminController(AdminQueryService queryService, LoginThrottle loginThrottle) {
 		this.queryService = queryService;
+		this.loginThrottle = loginThrottle;
 	}
 
 	/**
@@ -48,6 +55,16 @@ public class AdminController {
 			@RequestParam(defaultValue = "0") @Min(0) @Max(100_000) int page,
 			@RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
 		return AccountPage.from(queryService.searchAccounts(query, status, page, size));
+	}
+
+	/**
+	 * POST /admin/login-locks/{username}/unlock : 로그인 잠금 해제. 창구에서 본인 확인을 한 뒤 잠금 시간을 기다리지 않고 푼다.
+	 * 실패 횟수도 지워 처음부터 센다. 잠긴 적 없는 아이디여도 204 다(어떤 아이디가 있는지 알려 주지 않는다).
+	 */
+	@PostMapping("/login-locks/{username}/unlock")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	public void unlockLogin(@PathVariable @Size(max = 50) String username) {
+		loginThrottle.unlock(username);
 	}
 
 	/** GET /admin/summary : 계좌 현황과 원장 점검 결과 */

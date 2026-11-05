@@ -13,6 +13,7 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 
 import java.time.LocalDateTime;
+import java.util.Objects;
 
 /**
  * account 테이블과 연결되는 JPA 엔티티.
@@ -49,6 +50,18 @@ public class Account {
 
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private LocalDateTime createdAt;
+
+	@Override
+	public boolean equals(Object o) {
+		if (o == null || getClass() != o.getClass()) return false;
+		Account account = (Account) o;
+		return balance == account.balance && Objects.equals(id, account.id) && Objects.equals(accountNumber, account.accountNumber) && Objects.equals(ownerName, account.ownerName) && status == account.status && Objects.equals(createdAt, account.createdAt) && Objects.equals(customerId, account.customerId) && Objects.equals(closedAt, account.closedAt);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(id, accountNumber, ownerName, balance, status, createdAt, customerId, closedAt);
+	}
 
 	// 계좌 주인(customer.id). 고객 기능 전에 만든 계좌와 관리자가 이름만으로 연 계좌는 null 이고, 관리자만 다룬다.
 	// 연관관계(@ManyToOne)로 두지 않고 값만 가진다. 소유자 확인에는 번호만 있으면 되고, 고객 엔티티와 결합하지 않기 위해서다.

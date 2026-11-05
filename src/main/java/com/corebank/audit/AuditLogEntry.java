@@ -37,7 +37,8 @@ public record AuditLogEntry(
 			if (status >= 200 && status < 300) {
 				return SUCCESS;
 			}
-			if (status == 401 || status == 403) {
+			// 401/403(인증·권한)과 429(횟수 제한, 로그인 잠금)는 보안 장치가 막은 것이라 업무 실패와 나눠 본다.
+			if (status == 401 || status == 403 || status == 429) {
 				return DENIED;
 			}
 			return FAILURE;

@@ -1,5 +1,6 @@
 package com.corebank.idempotency;
 
+import com.corebank.account.RecipientLookupLimit;
 import com.corebank.account.AccountController;
 import com.corebank.account.AccountService;
 import com.corebank.ledger.LedgerTransaction;
@@ -42,6 +43,10 @@ class IdempotencyControllerTest {
 	// 관리자 토큰이라 권한 확인은 항상 통과한다. 실제 규칙은 CustomerAuthIntegrationTest 에서 본다.
 	@MockitoBean
 	private AccountAccessPolicy accessPolicy;
+
+	// 수취인 조회 횟수 제한은 DB 가 필요하다. 웹 계층 테스트에서는 아무것도 하지 않는 가짜로 둔다.
+	@MockitoBean
+	private RecipientLookupLimit lookupLimit;
 
 	@MockitoBean
 	private AccountService accountService;

@@ -38,10 +38,13 @@ public class AccountController {
 
 	private final AccountService accountService;
 	private final AccountAccessPolicy accessPolicy;
+	private final RecipientLookupLimit lookupLimit;
 
-	public AccountController(AccountService accountService, AccountAccessPolicy accessPolicy) {
+	public AccountController(AccountService accountService, AccountAccessPolicy accessPolicy,
+			RecipientLookupLimit lookupLimit) {
 		this.accountService = accountService;
 		this.accessPolicy = accessPolicy;
+		this.lookupLimit = lookupLimit;
 	}
 
 	/** 내 계좌 목록 응답 */
@@ -89,7 +92,10 @@ public class AccountController {
 	 */
 	@GetMapping("/lookup")
 	public RecipientResponse lookup(
-			@RequestParam @Pattern(regexp = "\\d{13}", message = "계좌번호는 숫자 13자리입니다.") String accountNumber) {
+			@RequestParam @Pattern(regexp = "\\d{13}", message = "계좌번호는 숫자 13자리입니다.") String accountNumber,
+			@AuthenticationPrincipal Jwt jwt) {
+		// 없는 계좌번호(404)도 한 번으로 센다. 그래야 있는 번호를 찾아 헤매는 시도도 묶인다.
+		lookupLimit.check(Actor.from(jwt));
 		return RecipientResponse.from(accountService.findRecipient(accountNumber));
 	}
 

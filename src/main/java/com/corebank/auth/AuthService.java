@@ -6,7 +6,6 @@ import com.corebank.customer.Customer;
 import com.corebank.customer.CustomerService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
 
@@ -23,13 +22,15 @@ public class AuthService {
 	private final CustomerService customerService;
 	private final PasswordEncoder passwordEncoder;
 	private final JwtTokenService tokenService;
+	private final LoginThrottle throttle;
 
 	public AuthService(AdminUserRepository adminUserRepository, CustomerService customerService,
-			PasswordEncoder passwordEncoder, JwtTokenService tokenService) {
+			PasswordEncoder passwordEncoder, JwtTokenService tokenService, LoginThrottle throttle) {
 		this.adminUserRepository = adminUserRepository;
 		this.customerService = customerService;
 		this.passwordEncoder = passwordEncoder;
 		this.tokenService = tokenService;
+		this.throttle = throttle;
 	}
 
 	/**
@@ -42,25 +43,34 @@ public class AuthService {
 	 * 관리자 또는 고객으로 로그인한다. 어느 경로든 비밀번호 비교는 한 번이라, 응답 시간으로 아이디가 관리자인지
 	 * 고객인지 없는 아이디인지 알아낼 수 없다(없는 아이디는 CustomerService 가 가짜 해시와 비교한다).
 	 *
+	 * <p>연속 실패가 쌓이면 아이디를 잠시 잠근다(LoginThrottle). 관리자 아이디도, 없는 아이디도 똑같이 센다.
+	 *
 	 * @throws InvalidCredentialsException 아이디가 없거나 비밀번호가 틀렸을 때. 어느 쪽인지 알려 주지 않는다.
+	 * @throws LoginLockedException        실패가 쌓여 잠긴 아이디. 비밀번호를 확인하지 않는다.
 	 */
-	@Transactional(readOnly = true)
 	public LoginResult login(String username, String password) {
+		throttle.acquire(username);
 		Optional<AdminUser> admin = adminUserRepository.findByUsername(username);
+		LoginResult result;
 		if (admin.isPresent()) {
 			if (!passwordEncoder.matches(password, admin.get().getPasswordHash())) {
 				throw new InvalidCredentialsException();
 			}
-			return new LoginResult(tokenService.issueAdminToken(admin.get().getUsername()),
+			result = new LoginResult(tokenService.issueAdminToken(admin.get().getUsername()),
 					admin.get().getUsername(), Actor.SCOPE_ADMIN, null);
+		} else {
+			result = customerToken(customerService.authenticate(username, password));
 		}
-		return customerLogin(username, password);
+		throttle.succeeded(username);
+		return result;
 	}
 
-	/** 고객으로만 로그인한다. 관리자 계정은 여기서 로그인되지 않는다. */
-	@Transactional(readOnly = true)
+	/** 고객으로만 로그인한다. 관리자 계정은 여기서 로그인되지 않는다. 실패 횟수는 login 과 함께 센다. */
 	public LoginResult customerLogin(String username, String password) {
-		return customerToken(customerService.authenticate(username, password));
+		throttle.acquire(username);
+		LoginResult result = customerToken(customerService.authenticate(username, password));
+		throttle.succeeded(username);
+		return result;
 	}
 
 	/** 가입 직후처럼 이미 확인된 고객에게 토큰을 준다. */

@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "project-corebank API",
-    "description": "계좌 개설/조회, 입금, 출금, 이체, 멱등성, 거래내역, 계좌 해지, 일 마감, 고객 인증, 감사 로그 전체 회귀 테스트. 위에서부터 순서대로 실행해야 한다(앞 요청이 만든 계좌 id를 뒤에서 쓴다).",
+    "description": "계좌 개설/조회, 입금, 출금, 이체, 멱등성, 거래내역, 계좌 해지, 일 마감, 고객 인증, 감사 로그, 횟수 제한 전체 회귀 테스트. 위에서부터 순서대로 실행해야 한다(앞 요청이 만든 계좌 id를 뒤에서 쓴다).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -6328,6 +6328,379 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"상태 코드 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "12. 횟수 제한",
+      "description": "로그인 잠금. 같은 아이디로 5번 연속 실패하면 잠기고(429 LOGIN_LOCKED), 관리자가 풀 수 있다. 수취인 조회 한도(고객당 시간당 30번)는 통합 테스트(RateLimitIntegrationTest)가 본다.",
+      "item": [
+        {
+          "name": "틀린 비밀번호 1/5",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"username\":\"{{lockUser}}\",\"password\":\"wrong-password\"}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 매번 새 아이디. 없는 아이디도 있는 아이디와 똑같이 잠기는지 본다.",
+                  "pm.collectionVariables.set(\"lockUser\", \"lock_\" + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"INVALID_CREDENTIALS\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_CREDENTIALS\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "틀린 비밀번호 2/5",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"username\":\"{{lockUser}}\",\"password\":\"wrong-password\"}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"INVALID_CREDENTIALS\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_CREDENTIALS\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "틀린 비밀번호 3/5",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"username\":\"{{lockUser}}\",\"password\":\"wrong-password\"}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"INVALID_CREDENTIALS\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_CREDENTIALS\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "틀린 비밀번호 4/5",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"username\":\"{{lockUser}}\",\"password\":\"wrong-password\"}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"INVALID_CREDENTIALS\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_CREDENTIALS\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "틀린 비밀번호 5/5",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"username\":\"{{lockUser}}\",\"password\":\"wrong-password\"}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"INVALID_CREDENTIALS\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_CREDENTIALS\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6번째: 잠김",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"username\":\"{{lockUser}}\",\"password\":\"wrong-password\"}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 429\", () => pm.response.to.have.status(429));",
+                  "pm.test(\"LOGIN_LOCKED\", () => pm.expect(pm.response.json().code).to.eql(\"LOGIN_LOCKED\"));",
+                  "pm.test(\"Retry-After: 잠금(기본 15분)이 풀릴 때까지 남은 초\", () => {",
+                  "  const s = Number(pm.response.headers.get(\"Retry-After\"));",
+                  "  pm.expect(s).to.be.above(0);",
+                  "  pm.expect(s).to.be.at.most(15 * 60);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "관리자 잠금 해제",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/login-locks/{{lockUser}}/unlock",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "login-locks",
+                "{{lockUser}}",
+                "unlock"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "해제 뒤에는 다시 비밀번호를 확인",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"username\":\"{{lockUser}}\",\"password\":\"wrong-password\"}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"잠금이 아니라 401(없는 아이디)\", () => {",
+                  "  pm.response.to.have.status(401);",
+                  "  pm.expect(pm.response.json().code).to.eql(\"INVALID_CREDENTIALS\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "막힌 로그인은 감사 로그에 거부로",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/audit-logs?actor={{lockUser}}&action=LOGIN&outcome=DENIED",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "audit-logs?actor={{lockUser}}&action=LOGIN&outcome=DENIED"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"틀린 5번 + 잠김 1번 + 해제 뒤 1번 = 거부 7건, 잠김은 LOGIN_LOCKED\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.totalElements).to.eql(7);",
+                  "  pm.expect(b.content.filter(e => e.errorCode === \"LOGIN_LOCKED\").length).to.eql(1);",
+                  "});"
                 ]
               }
             }

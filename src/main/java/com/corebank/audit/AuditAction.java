@@ -33,6 +33,7 @@ public enum AuditAction {
 
 	ADMIN_ACCOUNT_SEARCH("GET", "/admin/accounts"),
 	ADMIN_SUMMARY("GET", "/admin/summary"),
+	LOGIN_UNLOCK("POST", "/admin/login-locks/{username}/unlock"),
 	CLOSING_RUN("POST", "/admin/closings"),
 	CLOSING_LIST("GET", "/admin/closings"),
 	CLOSING_VIEW("GET", "/admin/closings/{id}"),

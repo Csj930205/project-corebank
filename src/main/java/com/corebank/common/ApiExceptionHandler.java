@@ -1,5 +1,8 @@
 package com.corebank.common;
 
+import java.time.Duration;
+import com.corebank.ratelimit.RateLimitExceededException;
+import com.corebank.auth.LoginLockedException;
 import com.corebank.account.AccountClosedException;
 import com.corebank.account.AccountNotFoundException;
 import com.corebank.account.BalanceLimitExceededException;
@@ -76,6 +79,32 @@ public class ApiExceptionHandler {
 	@ResponseStatus(HttpStatus.UNAUTHORIZED)
 	public ErrorResponse handleInvalidCredentials(InvalidCredentialsException e) {
 		return new ErrorResponse("INVALID_CREDENTIALS", e.getMessage());
+	}
+
+	/** 로그인 실패가 쌓여 잠김: 429. 언제 다시 시도할 수 있는지 Retry-After(초)로 알려 준다. */
+	@ExceptionHandler(LoginLockedException.class)
+	public ResponseEntity<ErrorResponse> handleLoginLocked(LoginLockedException e) {
+		return tooManyRequests(e.getRetryAfter(), new ErrorResponse("LOGIN_LOCKED",
+				"로그인 실패가 너무 많아 잠겼습니다. " + minutes(e.getRetryAfter()) + "분 뒤에 다시 시도하세요."));
+	}
+
+	/** 횟수 제한 초과(수취인 조회 등): 429 + Retry-After */
+	@ExceptionHandler(RateLimitExceededException.class)
+	public ResponseEntity<ErrorResponse> handleRateLimited(RateLimitExceededException e) {
+		return tooManyRequests(e.getRetryAfter(), new ErrorResponse("RATE_LIMITED",
+				"요청이 너무 많습니다. " + minutes(e.getRetryAfter()) + "분 뒤에 다시 시도하세요."));
+	}
+
+	private static ResponseEntity<ErrorResponse> tooManyRequests(Duration retryAfter, ErrorResponse body) {
+		// 초 단위로 올림. 0초가 되면 "바로 다시 해도 된다" 는 뜻이 되어 버린다.
+		long seconds = Math.max(1, (retryAfter.toMillis() + 999) / 1000);
+		return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+				.header(HttpHeaders.RETRY_AFTER, String.valueOf(seconds))
+				.body(body);
+	}
+
+	private static long minutes(Duration duration) {
+		return Math.max(1, (duration.toSeconds() + 59) / 60);
 	}
 
 	/** 없는 마감 실행: 404 */
