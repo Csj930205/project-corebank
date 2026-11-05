@@ -1,0 +1,6051 @@
+{
+  "info": {
+    "name": "project-corebank API",
+    "description": "계좌 개설/조회, 입금, 출금, 이체, 멱등성, 거래내역, 계좌 해지, 일 마감, 고객 인증 전체 회귀 테스트. 위에서부터 순서대로 실행해야 한다(앞 요청이 만든 계좌 id를 뒤에서 쓴다).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    }
+  ],
+  "item": [
+    {
+      "name": "0. 로그인",
+      "description": "계좌 API 는 로그인이 필요하다. 여기서 받은 관리자 토큰을 컬렉션 전체가 쓴다(창구 직원 역할). 실행: postman collection run ... --env-var adminUsername=... --env-var adminPassword=... (비밀번호는 파일에 저장하지 않는다)",
+      "item": [
+        {
+          "name": "관리자 로그인",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"username\":\"{{adminUsername}}\",\"password\":\"{{adminPassword}}\"}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200 (adminUsername / adminPassword 를 --env-var 로 넘겼는지 확인)\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"adminToken\", pm.response.json().accessToken);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. 계좌 개설/조회",
+      "description": "",
+      "item": [
+        {
+          "name": "계좌 개설",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"ownerName\":\"API테스트\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"응답 필드와 초기값\", () => {",
+                  "  pm.expect(b.id).to.be.a(\"number\");",
+                  "  pm.expect(b.accountNumber).to.match(/^110\\d{10}$/);",
+                  "  pm.expect(b.ownerName).to.eql(\"API테스트\");",
+                  "  pm.expect(b.balance).to.eql(0);",
+                  "  pm.expect(b.status).to.eql(\"ACTIVE\");",
+                  "  pm.expect(b.createdAt).to.be.a(\"string\");",
+                  "});",
+                  "pm.test(\"Location 헤더가 새 계좌를 가리킨다\", () => pm.expect(pm.response.headers.get(\"Location\")).to.eql(\"/accounts/\" + b.id));",
+                  "pm.collectionVariables.set(\"accountId\", b.id);",
+                  "pm.collectionVariables.set(\"accountNumber\", b.accountNumber);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "계좌 조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"개설한 계좌와 일치\", () => {",
+                  "  pm.expect(String(b.id)).to.eql(String(pm.collectionVariables.get(\"accountId\")));",
+                  "  pm.expect(b.accountNumber).to.eql(pm.collectionVariables.get(\"accountNumber\"));",
+                  "  pm.expect(b.balance).to.eql(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "두 번째 개설은 다른 계좌번호",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"ownerName\":\"API테스트2\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"계좌번호 중복 없음\", () => pm.expect(pm.response.json().accountNumber).to.not.eql(pm.collectionVariables.get(\"accountNumber\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "이름 정확히 100자(한글) 허용",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"ownerName\":\"{{name100}}\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set(\"name100\", \"가\".repeat(100));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"100자 그대로 저장\", () => pm.expect(pm.response.json().ownerName.length).to.eql(100));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "잔액/상태 조작 시도는 무시",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"ownerName\":\"조작시도\",\"balance\":1000000,\"status\":\"CLOSED\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"잔액 0, ACTIVE 유지\", () => {",
+                  "  pm.expect(pm.response.json().balance).to.eql(0);",
+                  "  pm.expect(pm.response.json().status).to.eql(\"ACTIVE\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "이름 공백 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"ownerName\":\"   \"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "이름 누락 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "이름 101자 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"ownerName\":\"{{name101}}\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set(\"name101\", \"가\".repeat(101));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "깨진 JSON 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{bad"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "없는 계좌 조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/999999999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "999999999"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 ACCOUNT_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"ACCOUNT_NOT_FOUND\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "숫자가 아닌 id 거부",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/abc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "abc"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. 입금",
+      "description": "",
+      "item": [
+        {
+          "name": "10,000원 입금",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountId}}/deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountId}}",
+                "deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":10000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"거래 결과: 금액 10000, 거래 후 잔액 10000\", () => {",
+                  "  pm.expect(b.transactionId).to.be.a(\"number\");",
+                  "  pm.expect(String(b.accountId)).to.eql(String(pm.collectionVariables.get(\"accountId\")));",
+                  "  pm.expect(b.amount).to.eql(10000);",
+                  "  pm.expect(b.balanceAfter).to.eql(10000);",
+                  "  pm.expect(b.createdAt).to.be.a(\"string\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5,000원 입금",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountId}}/deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountId}}",
+                "deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":5000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"거래 결과: 금액 5000, 거래 후 잔액 15000\", () => {",
+                  "  pm.expect(b.transactionId).to.be.a(\"number\");",
+                  "  pm.expect(String(b.accountId)).to.eql(String(pm.collectionVariables.get(\"accountId\")));",
+                  "  pm.expect(b.amount).to.eql(5000);",
+                  "  pm.expect(b.balanceAfter).to.eql(15000);",
+                  "  pm.expect(b.createdAt).to.be.a(\"string\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "잔액 확인 (15,000원)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"잔액 15000\", () => pm.expect(pm.response.json().balance).to.eql(15000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "입금액 0 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountId}}/deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountId}}",
+                "deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":0}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "입금액 음수 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountId}}/deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountId}}",
+                "deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":-1}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "입금액 소수 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountId}}/deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountId}}",
+                "deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":1.5}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "입금액 문자 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountId}}/deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountId}}",
+                "deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":\"abc\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "입금액 누락 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountId}}/deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountId}}",
+                "deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "잔액 확인 (15,000원)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"잔액 15000\", () => pm.expect(pm.response.json().balance).to.eql(15000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "없는 계좌 입금",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/999999999/deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "999999999",
+                "deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":1000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 ACCOUNT_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"ACCOUNT_NOT_FOUND\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "한도 시험용 계좌 개설",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"ownerName\":\"한도시험\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"limitAccountId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "long 최대값 입금",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{limitAccountId}}/deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{limitAccountId}}",
+                "deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":9223372036854775807}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1원 더 입금하면 한도 초과",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{limitAccountId}}/deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{limitAccountId}}",
+                "deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":1}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 BALANCE_LIMIT_EXCEEDED\", () => pm.expect(pm.response.json().code).to.eql(\"BALANCE_LIMIT_EXCEEDED\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. 출금",
+      "description": "",
+      "item": [
+        {
+          "name": "3,000원 출금",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountId}}/withdrawals",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountId}}",
+                "withdrawals"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":3000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"거래 결과: 금액 3000, 거래 후 잔액 12000\", () => {",
+                  "  pm.expect(b.transactionId).to.be.a(\"number\");",
+                  "  pm.expect(String(b.accountId)).to.eql(String(pm.collectionVariables.get(\"accountId\")));",
+                  "  pm.expect(b.amount).to.eql(3000);",
+                  "  pm.expect(b.balanceAfter).to.eql(12000);",
+                  "  pm.expect(b.createdAt).to.be.a(\"string\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "잔액보다 1원 많이 출금",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountId}}/withdrawals",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountId}}",
+                "withdrawals"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":12001}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 INSUFFICIENT_BALANCE\", () => pm.expect(pm.response.json().code).to.eql(\"INSUFFICIENT_BALANCE\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "잔액 확인 (12,000원)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"잔액 12000\", () => pm.expect(pm.response.json().balance).to.eql(12000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "출금액 0 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountId}}/withdrawals",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountId}}",
+                "withdrawals"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":0}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "출금액 음수 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountId}}/withdrawals",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountId}}",
+                "withdrawals"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":-1}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "출금액 소수 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountId}}/withdrawals",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountId}}",
+                "withdrawals"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":1.5}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "출금액 문자 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountId}}/withdrawals",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountId}}",
+                "withdrawals"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":\"abc\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "출금액 누락 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountId}}/withdrawals",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountId}}",
+                "withdrawals"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "없는 계좌 출금",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/999999999/withdrawals",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "999999999",
+                "withdrawals"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":1000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 ACCOUNT_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"ACCOUNT_NOT_FOUND\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "잔액 전부 출금",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountId}}/withdrawals",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountId}}",
+                "withdrawals"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":12000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"거래 결과: 금액 12000, 거래 후 잔액 0\", () => {",
+                  "  pm.expect(b.transactionId).to.be.a(\"number\");",
+                  "  pm.expect(String(b.accountId)).to.eql(String(pm.collectionVariables.get(\"accountId\")));",
+                  "  pm.expect(b.amount).to.eql(12000);",
+                  "  pm.expect(b.balanceAfter).to.eql(0);",
+                  "  pm.expect(b.createdAt).to.be.a(\"string\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "잔액 0에서 1원 출금",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountId}}/withdrawals",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountId}}",
+                "withdrawals"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":1}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 INSUFFICIENT_BALANCE\", () => pm.expect(pm.response.json().code).to.eql(\"INSUFFICIENT_BALANCE\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "잔액 확인 (0원)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"잔액 0\", () => pm.expect(pm.response.json().balance).to.eql(0));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. 이체",
+      "description": "",
+      "item": [
+        {
+          "name": "이체보냄 계좌 개설",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"ownerName\":\"이체보냄\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"fromId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "이체보냄 계좌에 10,000원 입금",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{fromId}}/deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{fromId}}",
+                "deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":10000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "이체받음 계좌 개설",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"ownerName\":\"이체받음\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"toId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3,000원 이체",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transfers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"fromAccountId\":{{fromId}},\"toAccountId\":{{toId}},\"amount\":3000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"이체 결과와 두 계좌의 이체 후 잔액\", () => {",
+                  "  pm.expect(b.transferId).to.be.a(\"number\");",
+                  "  pm.expect(String(b.fromAccountId)).to.eql(String(pm.collectionVariables.get(\"fromId\")));",
+                  "  pm.expect(String(b.toAccountId)).to.eql(String(pm.collectionVariables.get(\"toId\")));",
+                  "  pm.expect(b.amount).to.eql(3000);",
+                  "  pm.expect(b.fromBalanceAfter).to.eql(7000);",
+                  "  pm.expect(b.toBalanceAfter).to.eql(3000);",
+                  "  pm.expect(b.createdAt).to.be.a(\"string\");",
+                  "});",
+                  "pm.test(\"Location 헤더\", () => pm.expect(pm.response.headers.get(\"Location\")).to.eql(\"/transfers/\" + b.transferId));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "보낸 계좌 잔액 확인 (7,000원)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{fromId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{fromId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"잔액 7000\", () => pm.expect(pm.response.json().balance).to.eql(7000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "받은 계좌 잔액 확인 (3,000원)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{toId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{toId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"잔액 3000\", () => pm.expect(pm.response.json().balance).to.eql(3000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "되돌려 1,000원 이체 (반대 방향)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transfers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"fromAccountId\":{{toId}},\"toAccountId\":{{fromId}},\"amount\":1000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"반대 방향 잔액\", () => {",
+                  "  pm.expect(pm.response.json().fromBalanceAfter).to.eql(2000);",
+                  "  pm.expect(pm.response.json().toBalanceAfter).to.eql(8000);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "잔액보다 1원 많이 이체",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transfers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"fromAccountId\":{{fromId}},\"toAccountId\":{{toId}},\"amount\":8001}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 INSUFFICIENT_BALANCE\", () => pm.expect(pm.response.json().code).to.eql(\"INSUFFICIENT_BALANCE\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "실패 후 보낸 계좌 잔액 확인 (8,000원)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{fromId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{fromId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"잔액 8000\", () => pm.expect(pm.response.json().balance).to.eql(8000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "실패 후 받은 계좌 잔액 확인 (2,000원)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{toId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{toId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"잔액 2000\", () => pm.expect(pm.response.json().balance).to.eql(2000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "같은 계좌로 이체",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transfers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"fromAccountId\":{{fromId}},\"toAccountId\":{{fromId}},\"amount\":1000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 SAME_ACCOUNT_TRANSFER\", () => pm.expect(pm.response.json().code).to.eql(\"SAME_ACCOUNT_TRANSFER\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "없는 받는 계좌",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transfers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"fromAccountId\":{{fromId}},\"toAccountId\":999999999,\"amount\":1000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 ACCOUNT_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"ACCOUNT_NOT_FOUND\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "없는 보내는 계좌",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transfers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"fromAccountId\":999999999,\"toAccountId\":{{toId}},\"amount\":1000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 ACCOUNT_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"ACCOUNT_NOT_FOUND\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "이체액 0 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transfers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"fromAccountId\":{{fromId}},\"toAccountId\":{{toId}},\"amount\":0}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "이체액 음수 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transfers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"fromAccountId\":{{fromId}},\"toAccountId\":{{toId}},\"amount\":-1}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "이체액 소수 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transfers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"fromAccountId\":{{fromId}},\"toAccountId\":{{toId}},\"amount\":1.5}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "이체액 문자 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transfers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"fromAccountId\":{{fromId}},\"toAccountId\":{{toId}},\"amount\":\"abc\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "이체액 누락 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transfers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"fromAccountId\":{{fromId}},\"toAccountId\":{{toId}}}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "보내는 계좌 누락 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transfers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"toAccountId\":{{toId}},\"amount\":1000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "한도끝 계좌 개설",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"ownerName\":\"한도끝\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"fullId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "한도끝 계좌에 long 최대값 입금",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{fullId}}/deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{fullId}}",
+                "deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":9223372036854775807}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "한도끝 계좌로 이체하면 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transfers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"fromAccountId\":{{fromId}},\"toAccountId\":{{fullId}},\"amount\":1000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 BALANCE_LIMIT_EXCEEDED\", () => pm.expect(pm.response.json().code).to.eql(\"BALANCE_LIMIT_EXCEEDED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "입금 쪽 실패 후 보낸 계좌(롤백) 잔액 확인 (8,000원)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{fromId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{fromId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"잔액 8000\", () => pm.expect(pm.response.json().balance).to.eql(8000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "잔액 전부 이체",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transfers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"fromAccountId\":{{fromId}},\"toAccountId\":{{toId}},\"amount\":8000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"보낸 계좌 0원, 받은 계좌 10,000원\", () => { pm.expect(pm.response.json().fromBalanceAfter).to.eql(0); pm.expect(pm.response.json().toBalanceAfter).to.eql(10000); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. 멱등성 키",
+      "description": "같은 키로 다시 보내면 한 번만 처리되고 처음 결과를 돌려받는지 확인한다.",
+      "item": [
+        {
+          "name": "멱등성 계좌 개설",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"ownerName\":\"멱등성\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"idemId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "멱등성받음 계좌 개설",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"ownerName\":\"멱등성받음\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"idemToId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "첫 입금 (키 A)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{keyA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{idemId}}/deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{idemId}}",
+                "deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":10000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"keyA\", pm.variables.replaceIn(\"{{$guid}}\"));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"첫 요청에는 재전송 헤더가 없다\", () => pm.expect(pm.response.headers.has(\"Idempotent-Replayed\")).to.be.false);",
+                  "pm.collectionVariables.set(\"idemTxId\", pm.response.json().transactionId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "같은 키 A로 재전송",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{keyA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{idemId}}/deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{idemId}}",
+                "deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":10000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"재전송 표시 헤더 Idempotent-Replayed: true\", () => pm.expect(pm.response.headers.get(\"Idempotent-Replayed\")).to.eql(\"true\"));",
+                  "pm.test(\"처음과 같은 거래 번호와 거래 후 잔액\", () => {",
+                  "  pm.expect(String(pm.response.json().transactionId)).to.eql(String(pm.collectionVariables.get(\"idemTxId\")));",
+                  "  pm.expect(pm.response.json().balanceAfter).to.eql(10000);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "재전송 후 (한 번만 입금) 잔액 확인 (10,000원)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{idemId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{idemId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"잔액 10000\", () => pm.expect(pm.response.json().balance).to.eql(10000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "같은 키 A로 금액만 바꿔 요청",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{keyA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{idemId}}/deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{idemId}}",
+                "deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":20000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 IDEMPOTENCY_KEY_REUSED\", () => pm.expect(pm.response.json().code).to.eql(\"IDEMPOTENCY_KEY_REUSED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "같은 키 A로 출금 요청",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{keyA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{idemId}}/withdrawals",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{idemId}}",
+                "withdrawals"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":10000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 IDEMPOTENCY_KEY_REUSED\", () => pm.expect(pm.response.json().code).to.eql(\"IDEMPOTENCY_KEY_REUSED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "거부 후 잔액 확인 (10,000원)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{idemId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{idemId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"잔액 10000\", () => pm.expect(pm.response.json().balance).to.eql(10000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "첫 이체 (키 B)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{keyB}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transfers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"fromAccountId\":{{idemId}},\"toAccountId\":{{idemToId}},\"amount\":3000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"keyB\", pm.variables.replaceIn(\"{{$guid}}\"));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"첫 요청에는 재전송 헤더가 없다\", () => pm.expect(pm.response.headers.has(\"Idempotent-Replayed\")).to.be.false);",
+                  "pm.collectionVariables.set(\"idemTransferId\", pm.response.json().transferId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "같은 키 B로 이체 재전송",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{keyB}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transfers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"fromAccountId\":{{idemId}},\"toAccountId\":{{idemToId}},\"amount\":3000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"재전송 표시 헤더 Idempotent-Replayed: true\", () => pm.expect(pm.response.headers.get(\"Idempotent-Replayed\")).to.eql(\"true\"));",
+                  "pm.test(\"같은 이체 번호와 그때의 잔액\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(String(b.transferId)).to.eql(String(pm.collectionVariables.get(\"idemTransferId\")));",
+                  "  pm.expect(b.fromBalanceAfter).to.eql(7000);",
+                  "  pm.expect(b.toBalanceAfter).to.eql(3000);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "이체 재전송 후 보낸 계좌 잔액 확인 (7,000원)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{idemId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{idemId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"잔액 7000\", () => pm.expect(pm.response.json().balance).to.eql(7000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "이체 재전송 후 받은 계좌 잔액 확인 (3,000원)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{idemToId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{idemToId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"잔액 3000\", () => pm.expect(pm.response.json().balance).to.eql(3000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "키 없이 입금",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{idemId}}/deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{idemId}}",
+                "deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":1000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 IDEMPOTENCY_KEY_MISSING\", () => pm.expect(pm.response.json().code).to.eql(\"IDEMPOTENCY_KEY_MISSING\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "키 없이 이체",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transfers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"fromAccountId\":{{idemId}},\"toAccountId\":{{idemToId}},\"amount\":1000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 IDEMPOTENCY_KEY_MISSING\", () => pm.expect(pm.response.json().code).to.eql(\"IDEMPOTENCY_KEY_MISSING\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "허용하지 않는 문자가 든 키",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "bad key!"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{idemId}}/deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{idemId}}",
+                "deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":1000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 INVALID_IDEMPOTENCY_KEY\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_IDEMPOTENCY_KEY\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "잔액 부족 실패 (키 C)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{keyC}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{idemId}}/withdrawals",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{idemId}}",
+                "withdrawals"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":50000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"keyC\", pm.variables.replaceIn(\"{{$guid}}\"));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 INSUFFICIENT_BALANCE\", () => pm.expect(pm.response.json().code).to.eql(\"INSUFFICIENT_BALANCE\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "잔액 채우기",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{idemId}}/deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{idemId}}",
+                "deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":50000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "실패했던 키 C로 다시 시도하면 처리됨",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{keyC}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{idemId}}/withdrawals",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{idemId}}",
+                "withdrawals"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":50000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"첫 요청에는 재전송 헤더가 없다\", () => pm.expect(pm.response.headers.has(\"Idempotent-Replayed\")).to.be.false);",
+                  "pm.test(\"이번에는 실제로 출금\", () => pm.expect(pm.response.json().balanceAfter).to.eql(7000));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. 거래내역",
+      "description": "",
+      "item": [
+        {
+          "name": "내역 계좌 개설",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"ownerName\":\"내역\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"histId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "내역상대 계좌 개설",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"ownerName\":\"내역상대\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"histToId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1,000원 입금",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{histId}}/deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{histId}}",
+                "deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":1000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2,000원 입금",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{histId}}/deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{histId}}",
+                "deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":2000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "500원 출금",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{histId}}/withdrawals",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{histId}}",
+                "withdrawals"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":500}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "700원 이체",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transfers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"fromAccountId\":{{histId}},\"toAccountId\":{{histToId}},\"amount\":700}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "첫 페이지 (size=3)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{histId}}/transactions?size=3",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{histId}}",
+                "transactions?size=3"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"최신순 3건, 종류와 거래 후 잔액\", () => {",
+                  "  pm.expect(b.transactions.map(t => t.type)).to.eql([\"TRANSFER_OUT\", \"WITHDRAWAL\", \"DEPOSIT\"]);",
+                  "  pm.expect(b.transactions.map(t => t.balanceAfter)).to.eql([1800, 2500, 3000]);",
+                  "  pm.expect(b.transactions.map(t => t.direction)).to.eql([\"OUT\", \"OUT\", \"IN\"]);",
+                  "});",
+                  "pm.test(\"이체 상대 계좌 정보\", () => {",
+                  "  pm.expect(String(b.transactions[0].counterparty.accountId)).to.eql(String(pm.collectionVariables.get(\"histToId\")));",
+                  "  pm.expect(b.transactions[0].counterparty.ownerName).to.eql(\"내역상대\");",
+                  "  pm.expect(b.transactions[1].counterparty).to.eql(null);",
+                  "});",
+                  "pm.test(\"다음 페이지 커서 = 마지막 거래 번호\", () => pm.expect(b.nextBefore).to.eql(b.transactions[2].transactionId));",
+                  "pm.collectionVariables.set(\"histNext\", b.nextBefore);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "다음 페이지 (before=커서)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{histId}}/transactions?size=3&before={{histNext}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{histId}}",
+                "transactions?size=3&before={{histNext}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"남은 1건(첫 입금)과 끝 표시\", () => {",
+                  "  pm.expect(b.transactions.length).to.eql(1);",
+                  "  pm.expect(b.transactions[0].amount).to.eql(1000);",
+                  "  pm.expect(b.nextBefore).to.eql(null);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "받은 쪽 내역에는 TRANSFER_IN",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{histToId}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{histToId}}",
+                "transactions"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "const t = pm.response.json().transactions;",
+                  "pm.test(\"이체 받음 1건, 보낸 사람 표시\", () => {",
+                  "  pm.expect(t.length).to.eql(1);",
+                  "  pm.expect(t[0].type).to.eql(\"TRANSFER_IN\");",
+                  "  pm.expect(t[0].counterparty.ownerName).to.eql(\"내역\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "size=0 거부",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{histId}}/transactions?size=0",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{histId}}",
+                "transactions?size=0"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "size=101 거부",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{histId}}/transactions?size=101",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{histId}}",
+                "transactions?size=101"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "없는 계좌 내역",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/999999999/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "999999999",
+                "transactions"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 ACCOUNT_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"ACCOUNT_NOT_FOUND\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "7. 계좌 해지",
+      "description": "해지하면 남은 잔액을 지급(CLOSURE_PAYOUT)하고 CLOSED 가 된다. 같은 키 재전송은 같은 200, 해지 후 입출금·이체는 409.",
+      "item": [
+        {
+          "name": "해지 계좌 개설",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"ownerName\": \"해지\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"closeId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "해지상대 계좌 개설",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"ownerName\": \"해지상대\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"closePeerId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10,000원 입금 (closeId)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{closeId}}/deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{closeId}}",
+                "deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\": 10000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1,000원 입금 (closePeerId)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{closePeerId}}/deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{closePeerId}}",
+                "deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\": 1000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "잔액 10,000원 계좌 해지 (키 D)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{closeKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{closeId}}/closure",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{closeId}}",
+                "closure"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"closeKey\", pm.variables.replaceIn(\"{{$guid}}\"));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"처음 요청이라 재전송 헤더 없음\", () => pm.response.to.not.have.header(\"Idempotent-Replayed\"));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"해지 결과: CLOSED, 10,000원 지급\", () => {",
+                  "  pm.expect(String(b.accountId)).to.eql(String(pm.collectionVariables.get(\"closeId\")));",
+                  "  pm.expect(b.status).to.eql(\"CLOSED\");",
+                  "  pm.expect(b.payoutAmount).to.eql(10000);",
+                  "  pm.expect(b.payoutTransactionId).to.be.a(\"number\");",
+                  "  pm.expect(b.closedAt).to.be.a(\"string\");",
+                  "});",
+                  "pm.collectionVariables.set(\"closePayoutTxId\", b.payoutTransactionId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "같은 키 D로 해지 재전송",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{closeKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{closeId}}/closure",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{closeId}}",
+                "closure"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200 (409 아님)\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Idempotent-Replayed: true\", () => pm.expect(pm.response.headers.get(\"Idempotent-Replayed\")).to.eql(\"true\"));",
+                  "pm.test(\"처음과 같은 지급 거래\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(String(b.payoutTransactionId)).to.eql(String(pm.collectionVariables.get(\"closePayoutTxId\")));",
+                  "  pm.expect(b.payoutAmount).to.eql(10000);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "해지 계좌 조회 (CLOSED, 0원)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{closeId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{closeId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"CLOSED, 잔액 0, 해지 시각 있음\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.status).to.eql(\"CLOSED\");",
+                  "  pm.expect(b.balance).to.eql(0);",
+                  "  pm.expect(b.closedAt).to.be.a(\"string\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "새 키로 다시 해지",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{closeId}}/closure",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{closeId}}",
+                "closure"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"에러 코드 ACCOUNT_CLOSED\", () => pm.expect(pm.response.json().code).to.eql(\"ACCOUNT_CLOSED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "해지 계좌 입금",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{closeId}}/deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{closeId}}",
+                "deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":1000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"에러 코드 ACCOUNT_CLOSED\", () => pm.expect(pm.response.json().code).to.eql(\"ACCOUNT_CLOSED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "해지 계좌 출금",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{closeId}}/withdrawals",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{closeId}}",
+                "withdrawals"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":1000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"에러 코드 ACCOUNT_CLOSED\", () => pm.expect(pm.response.json().code).to.eql(\"ACCOUNT_CLOSED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "해지 계좌로 이체",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transfers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"fromAccountId\":{{closePeerId}},\"toAccountId\":{{closeId}},\"amount\":500}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"에러 코드 ACCOUNT_CLOSED\", () => pm.expect(pm.response.json().code).to.eql(\"ACCOUNT_CLOSED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "이체 거부 후 상대 계좌 잔액 확인 (1,000원)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{closePeerId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{closePeerId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"잔액 1000 (롤백)\", () => pm.expect(pm.response.json().balance).to.eql(1000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "해지 계좌 거래내역 (최신이 CLOSURE_PAYOUT)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{closeId}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{closeId}}",
+                "transactions"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"최신 거래: 해지 지급 10,000원, OUT, 거래 후 잔액 0\", () => {",
+                  "  const t = pm.response.json().transactions[0];",
+                  "  pm.expect(t.type).to.eql(\"CLOSURE_PAYOUT\");",
+                  "  pm.expect(t.direction).to.eql(\"OUT\");",
+                  "  pm.expect(t.amount).to.eql(10000);",
+                  "  pm.expect(t.balanceAfter).to.eql(0);",
+                  "  pm.expect(String(t.transactionId)).to.eql(String(pm.collectionVariables.get(\"closePayoutTxId\")));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "빈해지 계좌 개설",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"ownerName\": \"빈해지\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"closeZeroId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "잔액 0원 계좌 해지 (지급 없음)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{closeZeroId}}/closure",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{closeZeroId}}",
+                "closure"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"지급액 0, 지급 거래 없음\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.status).to.eql(\"CLOSED\");",
+                  "  pm.expect(b.payoutAmount).to.eql(0);",
+                  "  pm.expect(b.payoutTransactionId).to.eql(null);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "키 없이 해지",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{closePeerId}}/closure",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{closePeerId}}",
+                "closure"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"에러 코드 IDEMPOTENCY_KEY_MISSING\", () => pm.expect(pm.response.json().code).to.eql(\"IDEMPOTENCY_KEY_MISSING\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "없는 계좌 해지",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/999999999/closure",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "999999999",
+                "closure"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"에러 코드 ACCOUNT_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"ACCOUNT_NOT_FOUND\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "8. HTTP 규약",
+      "description": "공통 에러 형식이 스프링 기본 에러 처리 경로에도 적용되는지 확인한다.",
+      "item": [
+        {
+          "name": "JSON이 아닌 Content-Type",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/plain"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountId}}/deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountId}}",
+                "deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "amount=1000"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 415\", () => pm.response.to.have.status(415));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 UNSUPPORTED_MEDIA_TYPE\", () => pm.expect(pm.response.json().code).to.eql(\"UNSUPPORTED_MEDIA_TYPE\"));",
+                  "pm.test(\"Accept 헤더에 application/json\", () => pm.expect(pm.response.headers.get(\"Accept\")).to.include(\"application/json\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "지원하지 않는 메서드",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{accountId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 405\", () => pm.response.to.have.status(405));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 METHOD_NOT_ALLOWED\", () => pm.expect(pm.response.json().code).to.eql(\"METHOD_NOT_ALLOWED\"));",
+                  "pm.test(\"Allow 헤더에 GET\", () => pm.expect(pm.response.headers.get(\"Allow\")).to.include(\"GET\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "없는 경로",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/no-such-path",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "no-such-path"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"공통 에러 형식 {code, message}\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b).to.have.property(\"code\").that.is.a(\"string\");",
+                  "  pm.expect(b).to.have.property(\"message\").that.is.a(\"string\");",
+                  "});",
+                  "pm.test(\"에러 코드 RESOURCE_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"RESOURCE_NOT_FOUND\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "9. 일 마감 (관리자)",
+      "description": "관리자 토큰(0. 로그인)이 필요하다.",
+      "item": [
+        {
+          "name": "토큰 없이 마감",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/closings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "closings"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"businessDate\":\"{{closeDate}}\"}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const ymd = (d) => [d.getFullYear(), String(d.getMonth() + 1).padStart(2, \"0\"), String(d.getDate()).padStart(2, \"0\")].join(\"-\");",
+                  "const d = new Date(); d.setDate(d.getDate() - 1);",
+                  "pm.collectionVariables.set(\"closeDate\", ymd(d));",
+                  "pm.collectionVariables.set(\"todayDate\", ymd(new Date()));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "어제 마감",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/closings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "closings"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"businessDate\":\"{{closeDate}}\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"Location 헤더\", () => pm.expect(pm.response.headers.get(\"Location\")).to.eql(\"/admin/closings/\" + b.closing.id));",
+                  "pm.test(\"마감 결과: 어제 날짜, 끝난 상태, 실행 관리자\", () => {",
+                  "  pm.expect(b.closing.businessDate).to.eql(pm.collectionVariables.get(\"closeDate\"));",
+                  "  pm.expect([\"BALANCED\", \"UNBALANCED\"]).to.include(b.closing.status);",
+                  "  pm.expect(b.closing.trigger).to.eql(\"MANUAL\");",
+                  "  pm.expect(b.closing.requestedBy).to.eql(pm.variables.get(\"adminUsername\"));",
+                  "  pm.expect(b.closing.jobExecutionId).to.be.a(\"number\");",
+                  "  pm.expect(b.closing.depositLiability).to.be.a(\"string\");",
+                  "  pm.expect(b.closing.finishedAt).to.be.a(\"string\");",
+                  "});",
+                  "pm.test(\"불일치 건수 = 내역 수(200건 이하일 때)\", () => {",
+                  "  if (b.closing.mismatchCount <= 200) pm.expect(b.mismatches.length).to.eql(b.closing.mismatchCount);",
+                  "});",
+                  "pm.test(\"일계표 금액은 문자열\", () => b.totals.forEach(t => pm.expect(t.amount).to.be.a(\"string\")));",
+                  "pm.collectionVariables.set(\"closingId\", b.closing.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "마감 상세 조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/closings/{{closingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "closings",
+                "{{closingId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"같은 실행\", () => pm.expect(String(pm.response.json().closing.id)).to.eql(String(pm.collectionVariables.get(\"closingId\"))));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "마감 목록 (최신순)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/closings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "closings"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"방금 실행이 맨 앞\", () => pm.expect(String(pm.response.json().content[0].id)).to.eql(String(pm.collectionVariables.get(\"closingId\"))));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "오늘 마감은 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/closings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "closings"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"businessDate\":\"{{todayDate}}\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"에러 코드 BUSINESS_DATE_NOT_ENDED\", () => pm.expect(pm.response.json().code).to.eql(\"BUSINESS_DATE_NOT_ENDED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "날짜 누락 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/closings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "closings"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "없는 마감 조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/closings/999999999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "closings",
+                "999999999"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"에러 코드 CLOSING_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"CLOSING_NOT_FOUND\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "10. 고객 인증",
+      "description": "고객은 본인 계좌만 조회·거래한다. 남의 계좌는 404 로 숨긴다.",
+      "item": [
+        {
+          "name": "고객 A 가입",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/customer/signup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "customer",
+                "signup"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"username\":\"{{custA}}\",\"password\":\"customer-password-1\",\"name\":\"고객에이\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 실행할 때마다 새 아이디. 아이디는 영문 소문자로 시작해야 한다.",
+                  "const s = Date.now().toString(36);",
+                  "pm.collectionVariables.set(\"custA\", \"pa\" + s);",
+                  "pm.collectionVariables.set(\"custB\", \"pb\" + s);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"고객 토큰\", () => { pm.expect(b.role).to.eql(\"CUSTOMER\"); pm.expect(b.name).to.eql(\"고객에이\"); });",
+                  "pm.collectionVariables.set(\"customerToken\", b.accessToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "같은 아이디로 가입",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/customer/signup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "customer",
+                "signup"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"username\":\"{{custA}}\",\"password\":\"customer-password-1\",\"name\":\"중복\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"에러 코드 USERNAME_TAKEN\", () => pm.expect(pm.response.json().code).to.eql(\"USERNAME_TAKEN\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "짧은 비밀번호 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/customer/signup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "customer",
+                "signup"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"username\":\"{{custB}}\",\"password\":\"short\",\"name\":\"고객비\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "고객 B 가입",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/customer/signup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "customer",
+                "signup"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"username\":\"{{custB}}\",\"password\":\"customer-password-1\",\"name\":\"고객비\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"customerBToken\", pm.response.json().accessToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "틀린 비밀번호 로그인",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/customer/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "customer",
+                "login"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"username\":\"{{custA}}\",\"password\":\"wrong-password\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"에러 코드 INVALID_CREDENTIALS\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_CREDENTIALS\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "고객 A 로그인",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/customer/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "customer",
+                "login"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"username\":\"{{custA}}\",\"password\":\"customer-password-1\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"customerToken\", pm.response.json().accessToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "내 정보",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"고객 A\", () => { const b = pm.response.json(); pm.expect(b.role).to.eql(\"CUSTOMER\"); pm.expect(b.name).to.eql(\"고객에이\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "고객 A 계좌 개설 (본인 명의)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"ownerName\":\"다른사람\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"예금주는 본인, 요청의 이름은 무시\", () => { pm.expect(b.ownerName).to.eql(\"고객에이\"); pm.expect(b.customerId).to.be.a(\"number\"); });",
+                  "pm.collectionVariables.set(\"custAccountId\", b.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "고객 A 입금 10,000원",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{custAccountId}}/deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{custAccountId}}",
+                "deposits"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":10000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "고객 B 계좌 개설",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerBToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"custBAccountId\", pm.response.json().id);",
+                  "pm.collectionVariables.set(\"custBAccountNumber\", pm.response.json().accountNumber);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "내 계좌 목록 (본인 것만)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "const list = pm.response.json().accounts;",
+                  "pm.test(\"고객 A 계좌 1개\", () => { pm.expect(list.length).to.eql(1); pm.expect(String(list[0].id)).to.eql(String(pm.collectionVariables.get(\"custAccountId\"))); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "고객 B 가 A 계좌 조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{custAccountId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{custAccountId}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerBToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"에러 코드 ACCOUNT_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"ACCOUNT_NOT_FOUND\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "고객 B 가 A 계좌에서 출금",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{custAccountId}}/withdrawals",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{custAccountId}}",
+                "withdrawals"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerBToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":1000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"에러 코드 ACCOUNT_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"ACCOUNT_NOT_FOUND\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "고객 B 가 A 계좌에서 이체해 가기",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transfers"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerBToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"fromAccountId\":{{custAccountId}},\"toAccountId\":{{custBAccountId}},\"amount\":1000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"에러 코드 ACCOUNT_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"ACCOUNT_NOT_FOUND\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "고객 A 가 B 에게 3,000원 이체",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transfers"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"fromAccountId\":{{custAccountId}},\"toAccountId\":{{custBAccountId}},\"amount\":3000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"보낸 계좌 잔액 7000\", () => pm.expect(pm.response.json().fromBalanceAfter).to.eql(7000));",
+                  "pm.test(\"남의(받는 계좌) 잔액은 고객에게 주지 않는다\", () => pm.expect(pm.response.json().toBalanceAfter).to.eql(null));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "관리자는 고객 계좌 조회 가능",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{custAccountId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{custAccountId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"잔액 7000 (남의 거래 시도는 모두 실패)\", () => pm.expect(pm.response.json().balance).to.eql(7000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "관리자는 내 계좌 목록 불가",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 403\", () => pm.response.to.have.status(403));",
+                  "pm.test(\"에러 코드 FORBIDDEN\", () => pm.expect(pm.response.json().code).to.eql(\"FORBIDDEN\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "고객은 관리자 API 불가",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "summary"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 403\", () => pm.response.to.have.status(403));",
+                  "pm.test(\"에러 코드 FORBIDDEN\", () => pm.expect(pm.response.json().code).to.eql(\"FORBIDDEN\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "토큰 없이 계좌 조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{custAccountId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{custAccountId}}"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"에러 코드 UNAUTHORIZED\", () => pm.expect(pm.response.json().code).to.eql(\"UNAUTHORIZED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "공용 로그인: 고객 A 는 고객 토큰",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"username\":\"{{custA}}\",\"password\":\"customer-password-1\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"role CUSTOMER\", () => { pm.expect(pm.response.json().role).to.eql(\"CUSTOMER\"); pm.expect(pm.response.json().name).to.eql(\"고객에이\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "수취인 조회 (B 계좌)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/lookup?accountNumber={{custBAccountNumber}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "lookup"
+              ],
+              "query": [
+                {
+                  "key": "accountNumber",
+                  "value": "{{custBAccountNumber}}"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"가린 예금주 이름만\", () => { pm.expect(b.ownerName).to.eql(\"고*비\"); pm.expect(b.accountNumber).to.eql(pm.collectionVariables.get(\"custBAccountNumber\")); });",
+                  "pm.test(\"id·잔액은 주지 않는다\", () => { pm.expect(b).to.not.have.property(\"id\"); pm.expect(b).to.not.have.property(\"balance\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "없는 계좌번호 조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/lookup?accountNumber=1109999999999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "lookup"
+              ],
+              "query": [
+                {
+                  "key": "accountNumber",
+                  "value": "1109999999999"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"에러 코드 ACCOUNT_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"ACCOUNT_NOT_FOUND\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "계좌번호 형식 오류",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/lookup?accountNumber=110-0000-000001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "lookup"
+              ],
+              "query": [
+                {
+                  "key": "accountNumber",
+                  "value": "110-0000-000001"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "계좌번호로 2,000원 이체",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transfers"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"fromAccountId\":{{custAccountId}},\"toAccountNumber\":\"{{custBAccountNumber}}\",\"amount\":2000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": []
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"보낸 계좌 잔액 5000, 받는 계좌는 B\", () => { pm.expect(b.fromBalanceAfter).to.eql(5000); pm.expect(String(b.toAccountId)).to.eql(String(pm.collectionVariables.get(\"custBAccountId\"))); });",
+                  "pm.test(\"받는 계좌 잔액은 주지 않는다\", () => pm.expect(b.toBalanceAfter).to.eql(null));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "받는 계좌를 id 와 계좌번호로 동시에",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transfers"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"fromAccountId\":{{custAccountId}},\"toAccountId\":{{custBAccountId}},\"toAccountNumber\":\"{{custBAccountNumber}}\",\"amount\":1000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": []
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{adminToken}}",
+        "type": "string"
+      }
+    ]
+  }
+}

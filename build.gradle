@@ -1,0 +1,66 @@
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '4.1.2'
+	// 스프링 부트가 검증한 라이브러리 버전을 적용해, 아래 의존성에 버전을 적지 않아도 된다.
+	id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.corebank'
+version = '0.0.1-SNAPSHOT'
+
+java {
+	// PC의 기본 Java 와 상관없이 Java 25 로 컴파일하고 테스트한다.
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(25)
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	// 일 마감 대사 배치. -jdbc: 실행 이력(BATCH_ 테이블)을 DB에 남겨, 언제 어떤 날짜를 마감했고 성공했는지 추적한다.
+	implementation 'org.springframework.boot:spring-boot-starter-batch-jdbc'
+	// JPA 기반 DB 접근
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	// DB 스키마 변경 이력 관리
+	implementation 'org.springframework.boot:spring-boot-starter-flyway'
+	// 요청 값 검증 (@Valid, @NotBlank)
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	// REST API 서버
+	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+	// 인증·인가. JWT 발급과 검증은 Spring Security 의 OAuth2 Resource Server(내부적으로 Nimbus JOSE)를 쓴다.
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+	implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
+	implementation 'org.flywaydb:flyway-database-oracle'
+	// Oracle JDBC 드라이버. 실행할 때만 필요하다.
+	runtimeOnly 'com.oracle.database.jdbc:ojdbc17'
+	// @Getter 같은 반복 코드를 컴파일할 때 자동으로 만들어 준다. 실행 시에는 필요 없다.
+	compileOnly 'org.projectlombok:lombok'
+	annotationProcessor 'org.projectlombok:lombok'
+
+	// 테스트 전용 의존성
+	testImplementation 'org.springframework.boot:spring-boot-starter-batch-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-flyway-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-validation-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-security-test'
+	// 테스트에서 실제 Oracle 을 Docker 컨테이너로 실행
+	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+	testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+	testImplementation 'org.testcontainers:testcontainers-oracle-free'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+
+	// Colima 를 쓰는 PC에서는 Testcontainers 가 Colima 의 Docker 소켓을 찾도록 알려 준다.
+	def colimaSocket = file("${System.getProperty('user.home')}/.colima/default/docker.sock")
+	if (colimaSocket.exists() && !System.getenv('DOCKER_HOST')) {
+		environment 'DOCKER_HOST', "unix://${colimaSocket}"
+		environment 'TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE', '/var/run/docker.sock'
+	}
+}

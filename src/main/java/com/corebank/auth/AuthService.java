@@ -1,0 +1,73 @@
+package com.corebank.auth;
+
+import com.corebank.admin.AdminUser;
+import com.corebank.admin.AdminUserRepository;
+import com.corebank.customer.Customer;
+import com.corebank.customer.CustomerService;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Optional;
+
+/**
+ * 로그인. 아이디와 비밀번호를 확인하고 액세스 토큰을 발급한다.
+ *
+ * <p>로그인 창구는 하나다. 아이디가 관리자 계정이면 관리자로, 아니면 고객으로 확인하고, 어느 쪽인지는 토큰의 role 로
+ * 알려 준다. 고객 가입은 관리자 아이디를 쓸 수 없게 막으므로(CustomerService) 한 아이디가 양쪽에 있는 일은 없다.
+ */
+@Service
+public class AuthService {
+
+	private final AdminUserRepository adminUserRepository;
+	private final CustomerService customerService;
+	private final PasswordEncoder passwordEncoder;
+	private final JwtTokenService tokenService;
+
+	public AuthService(AdminUserRepository adminUserRepository, CustomerService customerService,
+			PasswordEncoder passwordEncoder, JwtTokenService tokenService) {
+		this.adminUserRepository = adminUserRepository;
+		this.customerService = customerService;
+		this.passwordEncoder = passwordEncoder;
+		this.tokenService = tokenService;
+	}
+
+	/**
+	 * @param name 고객 이름. 관리자는 null
+	 */
+	public record LoginResult(JwtTokenService.IssuedToken token, String username, String role, String name) {
+	}
+
+	/**
+	 * 관리자 또는 고객으로 로그인한다. 어느 경로든 비밀번호 비교는 한 번이라, 응답 시간으로 아이디가 관리자인지
+	 * 고객인지 없는 아이디인지 알아낼 수 없다(없는 아이디는 CustomerService 가 가짜 해시와 비교한다).
+	 *
+	 * @throws InvalidCredentialsException 아이디가 없거나 비밀번호가 틀렸을 때. 어느 쪽인지 알려 주지 않는다.
+	 */
+	@Transactional(readOnly = true)
+	public LoginResult login(String username, String password) {
+		Optional<AdminUser> admin = adminUserRepository.findByUsername(username);
+		if (admin.isPresent()) {
+			if (!passwordEncoder.matches(password, admin.get().getPasswordHash())) {
+				throw new InvalidCredentialsException();
+			}
+			return new LoginResult(tokenService.issueAdminToken(admin.get().getUsername()),
+					admin.get().getUsername(), Actor.SCOPE_ADMIN, null);
+		}
+		return customerLogin(username, password);
+	}
+
+	/** 고객으로만 로그인한다. 관리자 계정은 여기서 로그인되지 않는다. */
+	@Transactional(readOnly = true)
+	public LoginResult customerLogin(String username, String password) {
+		return customerToken(customerService.authenticate(username, password));
+	}
+
+	/** 가입 직후처럼 이미 확인된 고객에게 토큰을 준다. */
+	public LoginResult customerToken(Customer customer) {
+		JwtTokenService.IssuedToken token =
+				tokenService.issueCustomerToken(customer.getId(), customer.getUsername(), customer.getName());
+		return new LoginResult(token, customer.getUsername(), Actor.SCOPE_CUSTOMER, customer.getName());
+	}
+
+}
