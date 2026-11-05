@@ -1,5 +1,6 @@
 package com.corebank.closing;
 
+import com.corebank.support.LedgerTampering;
 import com.corebank.TestcontainersConfiguration;
 import com.corebank.account.AccountService;
 import com.corebank.ledger.TransactionType;
@@ -43,7 +44,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 오늘을 "끝난 영업일" 로 마감한다.
  *
  * <p>불일치 테스트는 SQL 로 원장이나 잔액을 일부러 틀어 놓고 배치가 찾아내는지 본다. 같은 DB 를 다른 테스트와 함께 쓰므로
- * 틀어 놓은 값은 finally 에서 반드시 되돌린다.
+ * 틀어 놓은 값은 finally 에서 반드시 되돌린다. 원장과 이체는 DB 트리거가 수정·삭제를 막으므로(V12), 조작과 되돌리기만
+ * LedgerTampering 으로 트리거를 잠시 끄고 한다. 대사 배치는 바로 이런 "트리거를 우회한 변경" 을 찾는 장치다.
  */
 @Import({TestcontainersConfiguration.class, ClosingIntegrationTest.TomorrowClock.class})
 @SpringBootTest
@@ -190,7 +192,8 @@ class ClosingIntegrationTest {
 		Long id = openWithBalance("거래후잔액조작", 10_000);
 		Long lastTx = jdbcTemplate.queryForObject(
 				"SELECT MAX(id) FROM ledger_transaction WHERE account_id = ?", Long.class, id);
-		jdbcTemplate.update("UPDATE ledger_transaction SET balance_after = balance_after + 5 WHERE id = ?", lastTx);
+		LedgerTampering.withoutAppendOnlyTriggers(jdbcTemplate, () -> jdbcTemplate.update(
+				"UPDATE ledger_transaction SET balance_after = balance_after + 5 WHERE id = ?", lastTx));
 		try {
 			DailyClosing closing = closeToday();
 
@@ -201,7 +204,8 @@ class ClosingIntegrationTest {
 						assertThat(m.actual()).isEqualByComparingTo("10005");
 					});
 		} finally {
-			jdbcTemplate.update("UPDATE ledger_transaction SET balance_after = balance_after - 5 WHERE id = ?", lastTx);
+			LedgerTampering.withoutAppendOnlyTriggers(jdbcTemplate, () -> jdbcTemplate.update(
+					"UPDATE ledger_transaction SET balance_after = balance_after - 5 WHERE id = ?", lastTx));
 		}
 	}
 
@@ -210,8 +214,8 @@ class ClosingIntegrationTest {
 	void detectsUnbalancedTransaction() {
 		Long id = accountService.open("분개조작").getId();
 		Long txId = accountService.deposit(id, 10_000, newKey()).value().getId();
-		jdbcTemplate.update(
-				"UPDATE ledger_entry SET amount = amount + 1 WHERE transaction_id = ? AND ledger_account = 'CASH'", txId);
+		LedgerTampering.withoutAppendOnlyTriggers(jdbcTemplate, () -> jdbcTemplate.update(
+				"UPDATE ledger_entry SET amount = amount + 1 WHERE transaction_id = ? AND ledger_account = 'CASH'", txId));
 		try {
 			DailyClosing closing = closeToday();
 
@@ -223,8 +227,8 @@ class ClosingIntegrationTest {
 					});
 			assertThat(mismatches(closing)).noneMatch(m -> id.equals(m.accountId()) && m.transactionId() == null);
 		} finally {
-			jdbcTemplate.update(
-					"UPDATE ledger_entry SET amount = amount - 1 WHERE transaction_id = ? AND ledger_account = 'CASH'", txId);
+			LedgerTampering.withoutAppendOnlyTriggers(jdbcTemplate, () -> jdbcTemplate.update(
+					"UPDATE ledger_entry SET amount = amount - 1 WHERE transaction_id = ? AND ledger_account = 'CASH'", txId));
 		}
 	}
 
@@ -248,7 +252,7 @@ class ClosingIntegrationTest {
 						assertThat(m.actual()).isEqualByComparingTo("0");
 					});
 		} finally {
-			jdbcTemplate.update("DELETE FROM transfer WHERE id = ?", transferId);
+			LedgerTampering.withoutAppendOnlyTriggers(jdbcTemplate, () -> jdbcTemplate.update("DELETE FROM transfer WHERE id = ?", transferId));
 		}
 	}
 
@@ -261,10 +265,10 @@ class ClosingIntegrationTest {
 		Long outTx = jdbcTemplate.queryForObject(
 				"SELECT id FROM ledger_transaction WHERE transfer_id = ? AND transaction_type = 'TRANSFER_OUT'",
 				Long.class, transferId);
-		jdbcTemplate.update("""
+		LedgerTampering.withoutAppendOnlyTriggers(jdbcTemplate, () -> jdbcTemplate.update("""
 				UPDATE ledger_entry SET amount = amount + 1
 				WHERE transaction_id = ? AND ledger_account = 'TRANSFER_CLEARING'
-				""", outTx);
+				""", outTx));
 		try {
 			DailyClosing closing = closeToday();
 
@@ -273,10 +277,10 @@ class ClosingIntegrationTest {
 			assertThat(mismatches(closing)).filteredOn(m -> outTx.equals(m.transactionId()))
 					.extracting(ClosingMismatch::type).containsExactly(MismatchType.UNBALANCED_TRANSACTION);
 		} finally {
-			jdbcTemplate.update("""
+			LedgerTampering.withoutAppendOnlyTriggers(jdbcTemplate, () -> jdbcTemplate.update("""
 					UPDATE ledger_entry SET amount = amount - 1
 					WHERE transaction_id = ? AND ledger_account = 'TRANSFER_CLEARING'
-					""", outTx);
+					""", outTx));
 		}
 	}
 
