@@ -1,5 +1,6 @@
 package com.corebank.transfer;
 
+import com.corebank.audit.AuditContext;
 import com.corebank.account.AccountAccessPolicy;
 import com.corebank.account.AccountService;
 import com.corebank.auth.Actor;
@@ -46,6 +47,8 @@ public class TransferController {
 			@RequestHeader(IdempotencyKey.HEADER) String idempotencyKey,
 			@Valid @RequestBody TransferRequest request,
 			@AuthenticationPrincipal Jwt jwt) {
+		// 감사 기록에 남길 계좌. 권한 확인이나 잔액 확인에서 실패해도 어느 계좌로 시도했는지 남도록 먼저 적는다.
+		AuditContext.accounts(request.fromAccountId(), request.toAccountId());
 		// 보내는 계좌만 본인 것이어야 한다. 받는 계좌는 다른 사람 계좌가 보통이다(없으면 서비스가 404).
 		Actor actor = Actor.from(jwt);
 		accessPolicy.checkAccess(actor, request.fromAccountId());
@@ -53,6 +56,7 @@ public class TransferController {
 		Long toAccountId = request.toAccountId() != null
 				? request.toAccountId()
 				: accountService.idOf(request.toAccountNumber());
+		AuditContext.accounts(request.fromAccountId(), toAccountId);
 		IdempotentResult<TransferResult> result = transferService.transfer(
 				request.fromAccountId(), toAccountId, request.amount(), new IdempotencyKey(idempotencyKey));
 		Transfer transfer = result.value().transfer();

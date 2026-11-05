@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "project-corebank API",
-    "description": "계좌 개설/조회, 입금, 출금, 이체, 멱등성, 거래내역, 계좌 해지, 일 마감, 고객 인증 전체 회귀 테스트. 위에서부터 순서대로 실행해야 한다(앞 요청이 만든 계좌 id를 뒤에서 쓴다).",
+    "description": "계좌 개설/조회, 입금, 출금, 이체, 멱등성, 거래내역, 계좌 해지, 일 마감, 고객 인증, 감사 로그 전체 회귀 테스트. 위에서부터 순서대로 실행해야 한다(앞 요청이 만든 계좌 id를 뒤에서 쓴다).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -6030,6 +6030,304 @@
                 "exec": [
                   "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
                   "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "11. 감사 로그 (관리자)",
+      "description": "관리자 토큰(0. 로그인)이 필요하다. 계좌를 하나 열고 실패하는 출금을 보낸 뒤, 그 계좌의 감사 기록을 조회해 성공·실패가 모두 남았는지 본다.",
+      "item": [
+        {
+          "name": "감사용 계좌 개설",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"ownerName\":\"감사로그\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"X-Request-Id 응답 헤더(UUID)\", () => pm.expect(pm.response.headers.get(\"X-Request-Id\")).to.match(/^[0-9a-f-]{36}$/));",
+                  "pm.collectionVariables.set(\"auditAccountId\", pm.response.json().id);",
+                  "pm.collectionVariables.set(\"auditOpenRequestId\", pm.response.headers.get(\"X-Request-Id\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "잔액 부족 출금 (실패도 기록)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{auditAccountId}}/withdrawals",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{auditAccountId}}",
+                "withdrawals"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":1000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"실패 응답에도 X-Request-Id\", () => pm.expect(pm.response.headers.get(\"X-Request-Id\")).to.be.a(\"string\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "계좌로 감사 기록 조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/audit-logs?accountId={{auditAccountId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "audit-logs"
+              ],
+              "query": [
+                {
+                  "key": "accountId",
+                  "value": "{{auditAccountId}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"그 계좌의 기록 2건, 최신순\", () => {",
+                  "  pm.expect(b.totalElements).to.eql(2);",
+                  "  pm.expect(b.content.map(e => e.action)).to.eql([\"WITHDRAWAL\", \"ACCOUNT_OPEN\"]);",
+                  "});",
+                  "pm.test(\"실패한 출금: FAILURE, 422, 에러 코드\", () => {",
+                  "  const w = b.content[0];",
+                  "  pm.expect(w.outcome).to.eql(\"FAILURE\");",
+                  "  pm.expect(w.statusCode).to.eql(422);",
+                  "  pm.expect(w.errorCode).to.eql(\"INSUFFICIENT_BALANCE\");",
+                  "  pm.expect(w.targetAccountId).to.eql(pm.collectionVariables.get(\"auditAccountId\"));",
+                  "});",
+                  "pm.test(\"개설 기록: 요청 번호가 응답 헤더와 같고, 관리자가 했다\", () => {",
+                  "  const o = b.content[1];",
+                  "  pm.expect(o.requestId).to.eql(pm.collectionVariables.get(\"auditOpenRequestId\"));",
+                  "  pm.expect(o.actorType).to.eql(\"ADMIN\");",
+                  "  pm.expect(o.actorUsername).to.eql(pm.variables.get(\"adminUsername\"));",
+                  "  pm.expect(o.outcome).to.eql(\"SUCCESS\");",
+                  "});",
+                  "pm.test(\"요청 본문은 남기지 않는다(경로만)\", () => pm.expect(b.content[0].path).to.eql(\"/accounts/\" + pm.collectionVariables.get(\"auditAccountId\") + \"/withdrawals\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "조건 겹쳐 조회 (계좌 + 실패만)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/audit-logs?accountId={{auditAccountId}}&outcome=FAILURE",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "audit-logs"
+              ],
+              "query": [
+                {
+                  "key": "accountId",
+                  "value": "{{auditAccountId}}"
+                },
+                {
+                  "key": "outcome",
+                  "value": "FAILURE"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"실패 1건만\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.totalElements).to.eql(1);",
+                  "  pm.expect(b.content[0].action).to.eql(\"WITHDRAWAL\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "감사 기록 조회도 기록된다",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/audit-logs?action=AUDIT_LOG_SEARCH&actor={{adminUsername}}&size=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "audit-logs"
+              ],
+              "query": [
+                {
+                  "key": "action",
+                  "value": "AUDIT_LOG_SEARCH"
+                },
+                {
+                  "key": "actor",
+                  "value": "{{adminUsername}}"
+                },
+                {
+                  "key": "size",
+                  "value": "1"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"가장 최근 조회 기록은 바로 앞 요청(계좌 + 실패만)\", () => {",
+                  "  const e = pm.response.json().content[0];",
+                  "  pm.expect(e.action).to.eql(\"AUDIT_LOG_SEARCH\");",
+                  "  pm.expect(e.path).to.include(\"outcome=FAILURE\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "없는 action 으로 조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/audit-logs?action=NO_SUCH_ACTION",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "audit-logs"
+              ],
+              "query": [
+                {
+                  "key": "action",
+                  "value": "NO_SUCH_ACTION"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "토큰 없이 감사 기록 조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/audit-logs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "audit-logs"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 401\", () => pm.response.to.have.status(401));"
                 ]
               }
             }

@@ -1,6 +1,11 @@
 package com.corebank.auth;
 
+import com.corebank.audit.AuditContext;
+import com.corebank.audit.AuditLogFilter;
+import com.corebank.audit.AuditLogRepository;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
@@ -12,6 +17,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -31,17 +37,20 @@ import java.nio.charset.StandardCharsets;
  *
  * <p>세션을 만들지 않고(STATELESS) 요청마다 Authorization: Bearer 토큰으로 판단한다.
  * 토큰을 쿠키가 아니라 헤더로 보내므로 브라우저가 자동으로 실어 보내지 않고, 그래서 CSRF 방어가 필요 없다.
+ *
+ * <p>감사 로그 필터(AuditLogFilter)를 토큰 확인 바로 앞에 끼운다. 자리를 정한 이유는 그 클래스 주석 참고.
  */
 @Configuration(proxyBeanMethods = false)
 @Import(JwtConfig.class)
 public class SecurityConfig {
 
 	@Bean
-	SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+	SecurityFilterChain securityFilterChain(HttpSecurity http, ObjectProvider<AuditLogRepository> auditLogRepository)
+			throws Exception {
 		AuthenticationEntryPoint unauthorized = (request, response, e) ->
-				writeError(response, HttpServletResponse.SC_UNAUTHORIZED, "UNAUTHORIZED", "로그인이 필요하거나 토큰이 유효하지 않습니다.", true);
+				writeError(request, response, HttpServletResponse.SC_UNAUTHORIZED, "UNAUTHORIZED", "로그인이 필요하거나 토큰이 유효하지 않습니다.", true);
 		AccessDeniedHandler forbidden = (request, response, e) ->
-				writeError(response, HttpServletResponse.SC_FORBIDDEN, "FORBIDDEN", "권한이 없습니다.", false);
+				writeError(request, response, HttpServletResponse.SC_FORBIDDEN, "FORBIDDEN", "권한이 없습니다.", false);
 
 		http
 				.csrf(csrf -> csrf.disable())
@@ -65,6 +74,12 @@ public class SecurityConfig {
 				.exceptionHandling(ex -> ex
 						.authenticationEntryPoint(unauthorized)
 						.accessDeniedHandler(forbidden));
+		// 빈으로 등록하지 않고 여기서 만든다. 빈이면 스프링 부트가 서블릿 필터로도 등록해 요청마다 두 번 기록된다.
+		// 웹 계층 테스트(@WebMvcTest)처럼 DB 가 없는 환경에서는 저장소 빈이 없으니 감사 로그 없이 동작한다.
+		AuditLogRepository repository = auditLogRepository.getIfAvailable();
+		if (repository != null) {
+			http.addFilterBefore(new AuditLogFilter(repository), BearerTokenAuthenticationFilter.class);
+		}
 		return http.build();
 	}
 
@@ -73,8 +88,9 @@ public class SecurityConfig {
 	 * 필터는 컨트롤러보다 앞에서 동작해 ApiExceptionHandler 가 잡지 못하므로 여기서 직접 쓴다.
 	 * 메시지는 고정 문자열이라 JSON 이스케이프가 필요 없다.
 	 */
-	private static void writeError(HttpServletResponse response, int status, String code, String message,
-			boolean bearerChallenge) throws IOException {
+	private static void writeError(HttpServletRequest request, HttpServletResponse response, int status, String code,
+			String message, boolean bearerChallenge) throws IOException {
+		AuditContext.errorCode(request, code);
 		response.setStatus(status);
 		if (bearerChallenge) {
 			// RFC 6750: 401 응답에는 어떤 인증 방식이 필요한지 알려 준다.

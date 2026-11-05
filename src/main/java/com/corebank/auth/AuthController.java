@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import com.corebank.audit.AuditContext;
 import com.corebank.customer.CustomerService;
 import jakarta.validation.constraints.Pattern;
 import org.springframework.http.HttpStatus;
@@ -80,6 +81,7 @@ public class AuthController {
 	 */
 	@PostMapping("/login")
 	public TokenResponse login(@Valid @RequestBody LoginRequest request) {
+		AuditContext.attemptedUsername(request.username());
 		return TokenResponse.of(authService.login(request.username(), request.password()));
 	}
 
@@ -87,6 +89,7 @@ public class AuthController {
 	@PostMapping("/customer/signup")
 	@ResponseStatus(HttpStatus.CREATED)
 	public TokenResponse signUp(@Valid @RequestBody SignUpRequest request) {
+		AuditContext.attemptedUsername(request.username());
 		return TokenResponse.of(
 				authService.customerToken(customerService.signUp(request.username(), request.password(), request.name())));
 	}
@@ -94,6 +97,7 @@ public class AuthController {
 	/** POST /auth/customer/login: 고객으로만 로그인. 관리자 계정은 401 INVALID_CREDENTIALS. */
 	@PostMapping("/customer/login")
 	public TokenResponse customerLogin(@Valid @RequestBody LoginRequest request) {
+		AuditContext.attemptedUsername(request.username());
 		return TokenResponse.of(authService.customerLogin(request.username(), request.password()));
 	}
 

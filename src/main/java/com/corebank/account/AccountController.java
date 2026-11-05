@@ -1,5 +1,6 @@
 package com.corebank.account;
 
+import com.corebank.audit.AuditContext;
 import com.corebank.auth.Actor;
 import com.corebank.idempotency.IdempotencyKey;
 import com.corebank.idempotency.IdempotentResponses;
@@ -64,6 +65,8 @@ public class AccountController {
 			}
 			account = accountService.open(request.ownerName());
 		}
+		// 새 계좌 번호는 경로에 없으니 감사 기록에 직접 적는다.
+		AuditContext.accounts(account.getId(), null);
 		return ResponseEntity.created(URI.create("/accounts/" + account.getId()))
 				.body(AccountResponse.from(account));
 	}
