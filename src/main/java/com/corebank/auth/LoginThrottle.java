@@ -46,6 +46,29 @@ public class LoginThrottle {
 	}
 
 	/**
+	 * 지금 잠긴 아이디 한 줄. 없는 아이디도 잠기므로(계정 존재를 숨기려고) 목록에는 가입하지 않은 아이디도 나온다.
+	 *
+	 * @param failureCount 잠기기까지의 연속 실패 수
+	 * @param lockedUntil  이 시각에 저절로 풀린다
+	 */
+	public record LockedLogin(String username, int failureCount, LocalDateTime lockedUntil) {
+	}
+
+	/** 지금 잠긴 아이디. 곧 풀리는 순서. 많아도 앞의 limit 개만 돌려준다(관리자 화면용). */
+	@Transactional(readOnly = true)
+	public List<LockedLogin> locked(int limit) {
+		return jdbcTemplate.query("""
+						SELECT username, failure_count, locked_until FROM login_attempt
+						WHERE locked_until > ?
+						ORDER BY locked_until, username
+						FETCH FIRST ? ROWS ONLY
+						""",
+				(rs, n) -> new LockedLogin(rs.getString("username"), rs.getInt("failure_count"),
+						rs.getTimestamp("locked_until").toLocalDateTime()),
+				Timestamp.valueOf(now()), limit);
+	}
+
+	/**
 	 * 시도 한 번을 실패로 미리 센다. 성공하면 succeeded 가 지운다.
 	 *
 	 * @throws LoginLockedException 이미 잠긴 아이디

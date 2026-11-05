@@ -209,6 +209,51 @@ class RateLimitIntegrationTest {
 		login(username, PASSWORD).andExpect(status().isOk());
 	}
 
+	/** 잠긴 아이디는 관리자 목록에 실패 수·풀리는 시각과 함께 나오고, 풀면 빠진다. 고객은 목록을 볼 수 없다. */
+	@Test
+	void adminSeesLockedLoginsUntilUnlocked() throws Exception {
+		String username = signUp();
+		String notLockedYet = signUp();
+		for (int i = 0; i < 3; i++) {
+			login(username, "wrong-password").andExpect(status().isUnauthorized());
+		}
+		login(notLockedYet, "wrong-password").andExpect(status().isUnauthorized());
+		String admin = adminToken();
+		String lockedPath = "$.content[?(@.username == '" + username + "')]";
+
+		mockMvc.perform(get("/admin/login-locks").header(HttpHeaders.AUTHORIZATION, "Bearer " + admin))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath(lockedPath + ".failureCount").value(3))
+				.andExpect(jsonPath(lockedPath + ".lockedUntil").exists())
+				// 실패가 있어도 아직 안 잠긴 아이디는 나오지 않는다
+				.andExpect(jsonPath("$.content[?(@.username == '" + notLockedYet + "')]").isEmpty());
+
+		String customer = JsonPath.read(signUpBody("viewer_" + suffix()), "$.accessToken");
+		mockMvc.perform(get("/admin/login-locks").header(HttpHeaders.AUTHORIZATION, "Bearer " + customer))
+				.andExpect(status().isForbidden());
+
+		mockMvc.perform(post("/admin/login-locks/{username}/unlock", username)
+						.header(HttpHeaders.AUTHORIZATION, "Bearer " + admin))
+				.andExpect(status().isNoContent());
+		mockMvc.perform(get("/admin/login-locks").header(HttpHeaders.AUTHORIZATION, "Bearer " + admin))
+				.andExpect(jsonPath(lockedPath).isEmpty());
+	}
+
+	/** 잠금 시간이 지난 아이디는 목록에서 빠진다(행이 남아 있어도). */
+	@Test
+	void expiredLockIsNotListed() throws Exception {
+		String username = signUp();
+		for (int i = 0; i < 3; i++) {
+			login(username, "wrong-password").andExpect(status().isUnauthorized());
+		}
+
+		clock.advance(Duration.ofMinutes(10).plusSeconds(1));
+
+		mockMvc.perform(get("/admin/login-locks").header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.content[?(@.username == '" + username + "')]").isEmpty());
+	}
+
 	/**
 	 * 동시에 10번 틀린 비밀번호를 보내도 비밀번호 확인은 한도(3번)까지만 한다. 나머지는 확인 없이 잠금으로 거부된다.
 	 * 확인 "뒤에" 세면 10개가 모두 "아직 0번" 을 보고 통과해 10번을 시도할 수 있다.

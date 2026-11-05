@@ -57,6 +57,16 @@ public class AdminController {
 		return AccountPage.from(queryService.searchAccounts(query, status, page, size));
 	}
 
+	/** 잠긴 로그인 목록 응답. 한꺼번에 수천 개가 잠길 일은 드물지만, 그래도 앞의 200개만 준다. */
+	public record LoginLocks(List<LoginThrottle.LockedLogin> content) {
+	}
+
+	/** GET /admin/login-locks : 지금 잠긴 아이디, 곧 풀리는 순서. 가입하지 않은 아이디도 잠기므로 함께 나온다. */
+	@GetMapping("/login-locks")
+	public LoginLocks loginLocks() {
+		return new LoginLocks(loginThrottle.locked(200));
+	}
+
 	/**
 	 * POST /admin/login-locks/{username}/unlock : 로그인 잠금 해제. 창구에서 본인 확인을 한 뒤 잠금 시간을 기다리지 않고 푼다.
 	 * 실패 횟수도 지워 처음부터 센다. 잠긴 적 없는 아이디여도 204 다(어떤 아이디가 있는지 알려 주지 않는다).

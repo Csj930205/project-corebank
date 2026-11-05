@@ -6337,7 +6337,7 @@
     },
     {
       "name": "12. 횟수 제한",
-      "description": "로그인 잠금. 같은 아이디로 5번 연속 실패하면 잠기고(429 LOGIN_LOCKED), 관리자가 풀 수 있다. 수취인 조회 한도(고객당 시간당 30번)는 통합 테스트(RateLimitIntegrationTest)가 본다.",
+      "description": "로그인 잠금. 같은 아이디로 5번 연속 실패하면 잠기고(429 LOGIN_LOCKED), 관리자가 목록에서 보고 풀 수 있다. 수취인 조회 한도(고객당 시간당 30번)는 통합 테스트(RateLimitIntegrationTest)가 본다.",
       "item": [
         {
           "name": "틀린 비밀번호 1/5",
@@ -6601,6 +6601,40 @@
           ]
         },
         {
+          "name": "잠긴 아이디 목록에 보인다",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/login-locks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "login-locks"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"잠긴 아이디: 실패 5번, 풀리는 시각\", () => {",
+                  "  const lock = pm.response.json().content.find(l => l.username === pm.collectionVariables.get(\"lockUser\"));",
+                  "  pm.expect(lock, \"목록에 있어야 한다\").to.be.an(\"object\");",
+                  "  pm.expect(lock.failureCount).to.eql(5);",
+                  "  pm.expect(lock.lockedUntil).to.be.a(\"string\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "관리자 잠금 해제",
           "request": {
             "method": "POST",
@@ -6625,6 +6659,35 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"상태 코드 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "해제 뒤 목록에서 빠진다",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/login-locks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "login-locks"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"목록에 없다\", () => pm.expect(pm.response.json().content.map(l => l.username)).to.not.include(pm.collectionVariables.get(\"lockUser\")));"
                 ]
               }
             }
