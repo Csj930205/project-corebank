@@ -3,6 +3,10 @@ package com.corebank.account;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -127,6 +131,46 @@ class AccountTest {
 
 		assertThatThrownBy(() -> account.deposit(1000)).isInstanceOf(AccountClosedException.class);
 		assertThatThrownBy(() -> account.withdraw(1000)).isInstanceOf(AccountClosedException.class);
+	}
+
+	// ───────────────────────── 같은 계좌인지(equals) ─────────────────────────
+
+	/** id 가 같으면 잔액이 달라도 같은 계좌다. 해시도 변하지 않아 Set 에서 찾을 수 있다. */
+	@Test
+	void sameIdIsSameAccountEvenAfterBalanceChanges() {
+		Account first = withId(Account.open("1100000000001", "홍길동"), 1L);
+		Account loadedAgain = withId(Account.open("1100000000001", "홍길동"), 1L);
+		Set<Account> set = new HashSet<>(List.of(first));
+
+		first.deposit(1000);
+
+		assertThat(first).isEqualTo(loadedAgain).hasSameHashCodeAs(loadedAgain);
+		assertThat(set).contains(first);
+	}
+
+	/** id 가 다르면 이름과 잔액이 같아도 다른 계좌다. */
+	@Test
+	void differentIdIsDifferentAccount() {
+		assertThat(withId(Account.open("1100000000001", "홍길동"), 1L))
+				.isNotEqualTo(withId(Account.open("1100000000001", "홍길동"), 2L));
+	}
+
+	/** 저장 전(id 없음) 계좌는 자기 자신하고만 같다. 저장해 id 가 생겨도 해시가 그대로라 Set 에서 찾을 수 있다. */
+	@Test
+	void unsavedAccountEqualsOnlyItself() {
+		Account unsaved = Account.open("1100000000001", "홍길동");
+		Account otherUnsaved = Account.open("1100000000001", "홍길동");
+		Set<Account> set = new HashSet<>(List.of(unsaved));
+
+		assertThat(unsaved).isEqualTo(unsaved).isNotEqualTo(otherUnsaved);
+
+		ReflectionTestUtils.setField(unsaved, "id", 7L);
+		assertThat(set).contains(unsaved);
+	}
+
+	private static Account withId(Account account, long id) {
+		ReflectionTestUtils.setField(account, "id", id);
+		return account;
 	}
 
 }

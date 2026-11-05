@@ -13,7 +13,6 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 
 import java.time.LocalDateTime;
-import java.util.Objects;
 
 /**
  * account 테이블과 연결되는 JPA 엔티티.
@@ -51,18 +50,6 @@ public class Account {
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private LocalDateTime createdAt;
 
-	@Override
-	public boolean equals(Object o) {
-		if (o == null || getClass() != o.getClass()) return false;
-		Account account = (Account) o;
-		return balance == account.balance && Objects.equals(id, account.id) && Objects.equals(accountNumber, account.accountNumber) && Objects.equals(ownerName, account.ownerName) && status == account.status && Objects.equals(createdAt, account.createdAt) && Objects.equals(customerId, account.customerId) && Objects.equals(closedAt, account.closedAt);
-	}
-
-	@Override
-	public int hashCode() {
-		return Objects.hash(id, accountNumber, ownerName, balance, status, createdAt, customerId, closedAt);
-	}
-
 	// 계좌 주인(customer.id). 고객 기능 전에 만든 계좌와 관리자가 이름만으로 연 계좌는 null 이고, 관리자만 다룬다.
 	// 연관관계(@ManyToOne)로 두지 않고 값만 가진다. 소유자 확인에는 번호만 있으면 되고, 고객 엔티티와 결합하지 않기 위해서다.
 	@Column(name = "customer_id", updatable = false)
@@ -71,6 +58,38 @@ public class Account {
 	// 해지 시각. 정상 계좌는 null 이다. DB 의 ck_account_closed 제약이 상태와 짝이 맞는지 확인한다.
 	@Column(name = "closed_at")
 	private LocalDateTime closedAt;
+
+	/**
+	 * 같은 계좌인지는 id 로만 본다. 잔액·상태처럼 바뀌는 값으로 비교하면, 입금 한 번에 같은 계좌가 "다른 계좌" 가 되고
+	 * Set·Map 에 넣어 둔 계좌를 찾지 못한다.
+	 *
+	 * <ul>
+	 *   <li>저장 전(id 가 null)인 계좌는 자기 자신하고만 같다. 아직 DB 의 어느 행인지 정해지지 않았기 때문이다.</li>
+	 *   <li>getClass() 대신 instanceof 를, 필드 대신 getId() 를 쓴다(자기 쪽도). 지연 로딩 프록시는 Account 를 상속한
+	 *       다른 클래스이고 필드가 비어 있어, getter 로 읽어야 실제 값이 나온다. 같은 이유로 final 로 두지 않는다
+	 *       (final 이면 프록시가 가로채지 못해 프록시의 빈 필드로 비교하게 된다).</li>
+	 * </ul>
+	 */
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (!(o instanceof Account other)) {
+			return false;
+		}
+		return getId() != null && getId().equals(other.getId());
+	}
+
+	/**
+	 * 계좌마다 다르지 않고 클래스마다 같은 값이다. id 로 만들면 저장 전(null)과 저장 후(시퀀스 값)의 해시가 달라져,
+	 * 저장 전에 Set 에 넣은 계좌를 저장 뒤에 찾지 못한다. 같은 버킷에 모여 느려지는 것은 계좌를 수백만 개씩
+	 * 한 컬렉션에 담지 않으므로 문제가 되지 않는다.
+	 */
+	@Override
+	public int hashCode() {
+		return Account.class.hashCode();
+	}
 
 	/** JPA 가 DB 조회 결과로 객체를 만들 때 쓰는 기본 생성자. 애플리케이션 코드에서는 쓰지 않는다. */
 	protected Account() {
