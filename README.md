@@ -1,10 +1,12 @@
 # project-corebank: 미니 코어뱅킹 서버
 
+[![CI](https://github.com/Csj930205/project-corebank/actions/workflows/ci.yml/badge.svg)](https://github.com/Csj930205/project-corebank/actions/workflows/ci.yml)
+
 계좌 개설, 입출금, 이체, 해지와 일 마감 대사 배치를 처리하는 코어뱅킹 서버다. 고객은 본인 계좌만, 관리자(창구 직원)는 모든 계좌를 다룬다. 금융권(은행·카드·증권) 지원용 포트폴리오로 만들고 있다.
 
 기능 수보다 **"어떤 상황에서도 돈이 틀어지지 않는다"** 를 증명하는 데 집중한다. 모든 거래를 복식부기 원장에 남기고, 동시 요청과 재전송에도 잔액이 맞는지 실제 Oracle 위에서 테스트한다.
 
-- 화면: 별도 프로젝트 [`project-corebank-front`](../project-corebank-front) (React + TypeScript)
+- 화면: 별도 프로젝트 [`project-corebank-front`](https://github.com/Csj930205/project-corebank-front) (React + TypeScript)
 - 처음 기획과 후보 비교: [`docs/기획_2026-11-02.md`](docs/기획_2026-11-02.md)
 
 ## 진행 상황
