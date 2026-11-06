@@ -142,6 +142,13 @@ public class ApiExceptionHandler {
 		return new ErrorResponse("INVALID_REQUEST", "요청 값이 올바르지 않습니다.");
 	}
 
+	/** 조회 기간이 0001-01-01 ~ 9999-12-31 을 벗어남: 400. 그대로 DB 에 넘기면 Oracle 이 거절해 500 이 된다. */
+	@ExceptionHandler(InvalidDateRangeException.class)
+	@ResponseStatus(HttpStatus.BAD_REQUEST)
+	public ErrorResponse handleInvalidDateRange(InvalidDateRangeException e) {
+		return new ErrorResponse("INVALID_REQUEST", e.getMessage());
+	}
+
 	/** 멱등성 키 형식 오류: 400 */
 	@ExceptionHandler(InvalidIdempotencyKeyException.class)
 	@ResponseStatus(HttpStatus.BAD_REQUEST)

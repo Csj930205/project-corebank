@@ -111,7 +111,7 @@ curl -s localhost:8080/accounts -H "Authorization: Bearer $TOKEN"
 | POST | `/accounts/{id}/closure` ★ | 해지. 남은 잔액을 지급하고 CLOSED 로 바꾼다 | 200 |
 | GET | `/accounts/{id}/transactions?size=20&before=` | 거래내역 (최신순, 다음 페이지는 응답의 `nextBefore`) | 200 |
 | GET | `/auth/me` | 현재 토큰 정보 (인증 필요) | 200 |
-| GET | `/admin/accounts?query=&status=&page=&size=` | 계좌 검색 (관리자) | 200 |
+| GET | `/admin/accounts?query=&status=&openedFrom=&openedTo=&minBalance=&maxBalance=&page=&size=` | 계좌 검색 (관리자). 검색어는 계좌번호 앞자리 또는 이름 일부. 개설일(`YYYY-MM-DD`)·잔액(원) 범위는 양 끝 포함, 시작이 끝보다 크면 빈 목록 | 200 |
 | GET | `/admin/summary` | 계좌·잔액·거래 수 요약과 원장 점검 결과 (관리자) | 200 |
 | GET | `/admin/login-locks` | 지금 잠긴 아이디(실패 수, 풀리는 시각), 곧 풀리는 순서. 가입하지 않은 아이디도 나온다 (관리자) | 200 |
 | POST | `/admin/login-locks/{username}/unlock` | 로그인 잠금 해제. 창구에서 본인 확인 뒤 잠금 시간을 기다리지 않고 푼다 (관리자) | 204 |
@@ -297,7 +297,7 @@ Spring Batch 잡 하나가 네 단계를 순서대로 실행한다.
 ./gradlew test    # Docker 필요. Testcontainers 가 Oracle 컨테이너를 띄운다
 ```
 
-- **백엔드 250개**: 엔티티 단위 테스트, MockMvc 웹 계층 테스트, 실제 Oracle 통합 테스트. push·PR 마다 GitHub Actions 가 같은 테스트를 Linux 에서 돌린다(macOS 에서 안 보이던 시각 정밀도 버그를 여기서 찾았다).
+- **백엔드 259개**: 엔티티 단위 테스트, MockMvc 웹 계층 테스트, 실제 Oracle 통합 테스트. push·PR 마다 GitHub Actions 가 같은 테스트를 Linux 에서 돌린다(macOS 에서 안 보이던 시각 정밀도 버그를 여기서 찾았다).
   - 동시 출금·이체·해지에서 잔액과 원장이 맞는지
   - 이체 도중 실패하면 양쪽 모두 롤백되는지
   - 같은 키 동시 재전송이 한 번만 처리되는지
@@ -308,7 +308,7 @@ Spring Batch 잡 하나가 네 단계를 순서대로 실행한다.
   - 로그인 잠금(없는 아이디 포함), 잠금 만료·관리자 해제, 동시 시도가 한도를 넘지 못하는지, 수취인 조회 한도와 다음 구간
   - 원장 거래·분개·이체 기록을 SQL 로 고치거나 지우면 DB 가 거부하는지
   - 롤백된 출금, 로그인 실패, 401/403(무효 토큰 포함)도 감사 기록에 남고, 비밀번호는 남지 않으며, 기록을 고치거나 지우면 DB 가 거부하는지
-- **API 회귀 161개 요청 / 357개 검증**: [`postman/corebank-api.postman_collection.json`](postman/corebank-api.postman_collection.json). 서버를 띄운 뒤 위에서부터 순서대로 실행한다. 맨 앞 "0. 로그인" 에서 받은 관리자 토큰을 컬렉션 전체가 쓰고, 고객 폴더는 가입해서 받은 고객 토큰을 쓴다. 관리자 계정은 파일에 넣지 않고 실행할 때 넘긴다.
+- **API 회귀 171개 요청 / 374개 검증**: [`postman/corebank-api.postman_collection.json`](postman/corebank-api.postman_collection.json). 서버를 띄운 뒤 위에서부터 순서대로 실행한다. 맨 앞 "0. 로그인" 에서 받은 관리자 토큰을 컬렉션 전체가 쓰고, 고객 폴더는 가입해서 받은 고객 토큰을 쓴다. 관리자 계정은 파일에 넣지 않고 실행할 때 넘긴다.
 
   ```bash
   set -a; . ./.env; set +a

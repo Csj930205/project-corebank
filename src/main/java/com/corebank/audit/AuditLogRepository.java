@@ -1,11 +1,11 @@
 package com.corebank.audit;
 
+import com.corebank.common.DateRange;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
 import java.sql.Timestamp;
-import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -43,10 +43,10 @@ public class AuditLogRepository {
 	 *
 	 * @param actor     아이디(정확히 일치)
 	 * @param accountId 대상 계좌 또는 이체 상대 계좌
-	 * @param from, to  기간(날짜, 양 끝 포함)
+	 * @param period    기간(날짜, 양 끝 포함)
 	 */
 	public record Criteria(String actor, AuditAction action, AuditLogEntry.Outcome outcome, Long accountId,
-			LocalDate from, LocalDate to) {
+			DateRange period) {
 	}
 
 	public record Page(List<AuditLogEntry> content, long totalElements) {
@@ -73,14 +73,14 @@ public class AuditLogRepository {
 			args.add(c.accountId());
 			args.add(c.accountId());
 		}
-		if (c.from() != null) {
+		if (c.period().startInclusive() != null) {
 			where.append(" AND occurred_at >= ?");
-			args.add(Timestamp.valueOf(c.from().atStartOfDay()));
+			args.add(Timestamp.valueOf(c.period().startInclusive()));
 		}
-		if (c.to() != null) {
+		if (c.period().endExclusive() != null) {
 			// 끝 날짜를 포함하도록 다음 날 0시 "전" 까지
 			where.append(" AND occurred_at < ?");
-			args.add(Timestamp.valueOf(c.to().plusDays(1).atStartOfDay()));
+			args.add(Timestamp.valueOf(c.period().endExclusive()));
 		}
 
 		Long total = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM audit_log" + where, Long.class, args.toArray());

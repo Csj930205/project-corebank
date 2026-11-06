@@ -2,7 +2,6 @@ package com.corebank.admin;
 
 import com.corebank.account.Account;
 import com.corebank.account.AccountRepository;
-import com.corebank.account.AccountStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -39,12 +38,15 @@ public class AdminQueryService {
 	 * 쪽 번호 방식은 COUNT 쿼리가 한 번 더 나가고, 뒤쪽 페이지일수록 느려진다. 계좌가 아주 많아지면 바꿔야 한다.
 	 */
 	@Transactional(readOnly = true)
-	public Page<Account> searchAccounts(String query, AccountStatus status, int page, int size) {
+	public Page<Account> searchAccounts(AccountSearch search, int page, int size) {
+		String query = search.query();
 		String q = query == null || query.isBlank() ? null : query.trim();
 		String numberPrefix = q == null ? null : escapeLike(q) + "%";
 		String namePattern = q == null ? null : "%" + escapeLike(q.toLowerCase(Locale.ROOT)) + "%";
 		PageRequest pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id"));
-		return accountRepository.search(numberPrefix, namePattern, status, pageable);
+		return accountRepository.search(numberPrefix, namePattern, search.status(),
+				search.opened().startInclusive(), search.opened().endExclusive(),
+				search.minBalance(), search.maxBalance(), pageable);
 	}
 
 	/** LIKE 의 특수 문자(%, _)와 이스케이프 문자 자신을 글자 그대로 찾도록 바꾼다. "50%" 검색이 모든 이름과 맞으면 안 된다. */

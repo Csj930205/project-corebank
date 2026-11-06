@@ -8,8 +8,11 @@ import com.corebank.auth.LoginThrottle;
 import com.corebank.account.Account;
 import com.corebank.account.AccountResponse;
 import com.corebank.account.AccountStatus;
+import com.corebank.common.DateRange;
+import org.springframework.format.annotation.DateTimeFormat;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 import org.springframework.data.domain.Page;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -17,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -47,14 +51,23 @@ public class AdminController {
 		}
 	}
 
-	/** GET /admin/accounts?query=&status=&page=0&size=20 : 계좌 목록(최신 개설순). query 는 계좌번호 앞자리 또는 예금주 이름. */
+	/**
+	 * GET /admin/accounts?query=&status=&openedFrom=&openedTo=&minBalance=&maxBalance=&page=0&size=20 : 계좌 목록(최신 개설순).
+	 * query 는 계좌번호 앞자리 또는 예금주 이름. openedFrom, openedTo 는 개설일(YYYY-MM-DD), minBalance, maxBalance 는 잔액(원)이고
+	 * 모두 양 끝을 포함한다. 시작이 끝보다 크면 빈 목록이다.
+	 */
 	@GetMapping("/accounts")
 	public AccountPage accounts(
 			@RequestParam(required = false) @Size(max = 100) String query,
 			@RequestParam(required = false) AccountStatus status,
+			@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate openedFrom,
+			@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate openedTo,
+			@RequestParam(required = false) @PositiveOrZero Long minBalance,
+			@RequestParam(required = false) @PositiveOrZero Long maxBalance,
 			@RequestParam(defaultValue = "0") @Min(0) @Max(100_000) int page,
 			@RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
-		return AccountPage.from(queryService.searchAccounts(query, status, page, size));
+		var search = new AccountSearch(query, status, new DateRange(openedFrom, openedTo), minBalance, maxBalance);
+		return AccountPage.from(queryService.searchAccounts(search, page, size));
 	}
 
 	/** 잠긴 로그인 목록 응답. 한꺼번에 수천 개가 잠길 일은 드물지만, 그래도 앞의 200개만 준다. */

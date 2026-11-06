@@ -1,5 +1,6 @@
 package com.corebank.audit;
 
+import com.corebank.common.DateRange;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
@@ -45,7 +46,7 @@ public class AuditLogController {
 			@RequestParam(defaultValue = "50") @Min(1) @Max(100) int size) {
 		String actorOrNull = actor == null || actor.isBlank() ? null : actor.trim();
 		AuditLogRepository.Page result = repository.search(
-				new AuditLogRepository.Criteria(actorOrNull, action, outcome, accountId, from, to), page, size);
+				new AuditLogRepository.Criteria(actorOrNull, action, outcome, accountId, new DateRange(from, to)), page, size);
 		int totalPages = (int) ((result.totalElements() + size - 1) / size);
 		return new AuditLogPage(result.content(), page, size, result.totalElements(), totalPages);
 	}

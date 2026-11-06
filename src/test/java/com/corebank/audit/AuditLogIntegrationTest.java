@@ -295,6 +295,17 @@ class AuditLogIntegrationTest {
 		return ((Number) row.get(column)).longValue();
 	}
 
+	/** 기간 끝이 마지막 날(9999-12-31)이어도 된다(전에는 다음 날이 10000년이라 Oracle 이 거절해 500). 그 너머는 400. */
+	@Test
+	void periodAcceptsLastDateAndRejectsBeyond() throws Exception {
+		String admin = adminToken();
+		mockMvc.perform(get("/admin/audit-logs?from=0001-01-01&to=9999-12-31").header(HttpHeaders.AUTHORIZATION, bearer(admin)))
+				.andExpect(status().isOk());
+		mockMvc.perform(get("/admin/audit-logs?to=%2B10000-01-01").header(HttpHeaders.AUTHORIZATION, bearer(admin)))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+	}
+
 	private static String bearer(String token) {
 		return "Bearer " + token;
 	}

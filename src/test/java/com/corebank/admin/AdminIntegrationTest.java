@@ -5,6 +5,13 @@ import com.corebank.account.Account;
 import com.corebank.account.AccountService;
 import com.corebank.account.AccountStatus;
 import com.corebank.transfer.TransferService;
+import com.corebank.common.DateRange;
+import com.jayway.jsonpath.JsonPath;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -13,10 +20,20 @@ import org.springframework.data.domain.Page;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.math.BigDecimal;
+import java.sql.Timestamp;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static com.corebank.support.TestKeys.newKey;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
  * 관리자 조회 통합 테스트. 다른 테스트가 같은 DB 에 계좌를 계속 만들기 때문에,
@@ -24,6 +41,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
+@AutoConfigureMockMvc
 class AdminIntegrationTest {
 
 	@Autowired
@@ -38,6 +56,9 @@ class AdminIntegrationTest {
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
 
+	@Autowired
+	private MockMvc mockMvc;
+
 	private static String tag() {
 		return "t" + UUID.randomUUID().toString().substring(0, 8);
 	}
@@ -50,8 +71,8 @@ class AdminIntegrationTest {
 			accountService.open(tag + "-" + i);
 		}
 
-		Page<Account> first = adminQueryService.searchAccounts(tag, null, 0, 2);
-		Page<Account> last = adminQueryService.searchAccounts(tag, null, 2, 2);
+		Page<Account> first = adminQueryService.searchAccounts(new AccountSearch(tag, null), 0, 2);
+		Page<Account> last = adminQueryService.searchAccounts(new AccountSearch(tag, null), 2, 2);
 
 		assertThat(first.getTotalElements()).isEqualTo(5);
 		assertThat(first.getTotalPages()).isEqualTo(3);
@@ -66,9 +87,9 @@ class AdminIntegrationTest {
 		accountService.open("Kim-" + tag + "-alpha");
 		accountService.open("Lee-" + tag + "-beta");
 
-		assertThat(adminQueryService.searchAccounts(tag.toUpperCase() + "-ALPHA", null, 0, 20).getContent())
+		assertThat(adminQueryService.searchAccounts(new AccountSearch(tag.toUpperCase() + "-ALPHA", null), 0, 20).getContent())
 				.extracting(Account::getOwnerName).containsExactly("Kim-" + tag + "-alpha");
-		assertThat(adminQueryService.searchAccounts(tag, null, 0, 20).getTotalElements()).isEqualTo(2);
+		assertThat(adminQueryService.searchAccounts(new AccountSearch(tag, null), 0, 20).getTotalElements()).isEqualTo(2);
 	}
 
 	/** 계좌번호는 앞자리 일치 */
@@ -76,7 +97,7 @@ class AdminIntegrationTest {
 	void searchesAccountNumberByPrefix() {
 		Account account = accountService.open(tag());
 
-		Page<Account> found = adminQueryService.searchAccounts(account.getAccountNumber(), null, 0, 20);
+		Page<Account> found = adminQueryService.searchAccounts(new AccountSearch(account.getAccountNumber(), null), 0, 20);
 
 		assertThat(found.getContent()).extracting(Account::getId).containsExactly(account.getId());
 	}
@@ -89,9 +110,9 @@ class AdminIntegrationTest {
 		Account closed = accountService.open(tag + "-closed");
 		accountService.close(closed.getId(), newKey());
 
-		assertThat(adminQueryService.searchAccounts(tag, AccountStatus.CLOSED, 0, 20).getContent())
+		assertThat(adminQueryService.searchAccounts(new AccountSearch(tag, AccountStatus.CLOSED), 0, 20).getContent())
 				.extracting(Account::getId).containsExactly(closed.getId());
-		assertThat(adminQueryService.searchAccounts(tag, AccountStatus.ACTIVE, 0, 20).getContent())
+		assertThat(adminQueryService.searchAccounts(new AccountSearch(tag, AccountStatus.ACTIVE), 0, 20).getContent())
 				.extracting(Account::getId).containsExactly(active.getId());
 	}
 
@@ -102,9 +123,113 @@ class AdminIntegrationTest {
 		accountService.open(tag + "_50%할인");
 		accountService.open(tag + "X50Y할인");
 
-		assertThat(adminQueryService.searchAccounts(tag + "_50%", null, 0, 20).getContent())
+		assertThat(adminQueryService.searchAccounts(new AccountSearch(tag + "_50%", null), 0, 20).getContent())
 				.extracting(Account::getOwnerName).containsExactly(tag + "_50%할인");
 		assertThat(AdminQueryService.escapeLike("a%b_c\\")).isEqualTo("a\\%b\\_c\\\\");
+	}
+
+	/** 잔액 범위는 양 끝을 포함한다. 한쪽만 줘도 된다. */
+	@Test
+	void filtersByBalanceRangeInclusive() {
+		String tag = tag();
+		Account low = accountService.open(tag + "-low");
+		Account mid = accountService.open(tag + "-mid");
+		Account high = accountService.open(tag + "-high");
+		accountService.deposit(low.getId(), 1_000, newKey());
+		accountService.deposit(mid.getId(), 5_000, newKey());
+		accountService.deposit(high.getId(), 10_000, newKey());
+
+		assertThat(ids(new AccountSearch(tag, null, DateRange.ALL, 1_000L, 5_000L)))
+				.containsExactly(mid.getId(), low.getId());
+		assertThat(ids(new AccountSearch(tag, null, DateRange.ALL, 5_000L, null)))
+				.containsExactly(high.getId(), mid.getId());
+		assertThat(ids(new AccountSearch(tag, null, DateRange.ALL, null, 999L))).isEmpty();
+		// 시작이 끝보다 크면 에러가 아니라 빈 결과
+		assertThat(ids(new AccountSearch(tag, null, DateRange.ALL, 5_000L, 1_000L))).isEmpty();
+	}
+
+	/** 개설일 범위는 날짜 단위이고 양 끝 날짜를 하루 종일 포함한다(끝 날짜 23:59:59.999999 도 들어간다). */
+	@Test
+	void filtersByOpenedDateRangeInclusive() {
+		String tag = tag();
+		Account before = openedAt(tag + "-before", LocalDateTime.of(2001, 3, 9, 23, 59, 59, 999_999_000));
+		Account first = openedAt(tag + "-first", LocalDateTime.of(2001, 3, 10, 0, 0));
+		Account last = openedAt(tag + "-last", LocalDateTime.of(2001, 3, 12, 23, 59, 59, 999_999_000));
+		Account after = openedAt(tag + "-after", LocalDateTime.of(2001, 3, 13, 0, 0));
+
+		assertThat(ids(opened(tag, LocalDate.of(2001, 3, 10), LocalDate.of(2001, 3, 12))))
+				.containsExactly(last.getId(), first.getId());
+		assertThat(ids(opened(tag, LocalDate.of(2001, 3, 13), null))).containsExactly(after.getId());
+		assertThat(ids(opened(tag, null, LocalDate.of(2001, 3, 9)))).containsExactly(before.getId());
+		assertThat(ids(opened(tag, LocalDate.of(2001, 3, 12), LocalDate.of(2001, 3, 10)))).isEmpty();
+	}
+
+	/** 개설일과 잔액 조건은 함께(AND) 건다. */
+	@Test
+	void combinesDateAndBalanceConditions() {
+		String tag = tag();
+		Account oldRich = openedAt(tag + "-old-rich", LocalDateTime.of(2001, 5, 1, 12, 0));
+		openedAt(tag + "-old-poor", LocalDateTime.of(2001, 5, 1, 12, 0));
+		Account newRich = accountService.open(tag + "-new-rich");
+		accountService.deposit(oldRich.getId(), 50_000, newKey());
+		accountService.deposit(newRich.getId(), 50_000, newKey());
+
+		var search = new AccountSearch(tag, null, new DateRange(LocalDate.of(2001, 5, 1), LocalDate.of(2001, 5, 1)),
+				10_000L, null);
+		assertThat(ids(search)).containsExactly(oldRich.getId());
+	}
+
+	/** 요청 값 검증: 음수 잔액, 날짜 형식 오류, DB 가 못 다루는 날짜는 400. 9999-12-31 은 된다. */
+	@Test
+	void rejectsInvalidRangeParameters() throws Exception {
+		String admin = adminToken();
+		for (String bad : List.of("minBalance=-1", "maxBalance=abc", "openedFrom=2026-13-01", "openedTo=%2B10000-01-01",
+				"openedFrom=0000-12-31")) {
+			mockMvc.perform(get("/admin/accounts?" + bad).header(HttpHeaders.AUTHORIZATION, "Bearer " + admin))
+					.andExpect(status().isBadRequest())
+					.andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+		}
+		mockMvc.perform(get("/admin/accounts?openedFrom=0001-01-01&openedTo=9999-12-31&minBalance=0&maxBalance="
+						+ Long.MAX_VALUE).header(HttpHeaders.AUTHORIZATION, "Bearer " + admin))
+				.andExpect(status().isOk());
+	}
+
+	private List<Long> ids(AccountSearch search) {
+		return adminQueryService.searchAccounts(search, 0, 20).getContent().stream().map(Account::getId).toList();
+	}
+
+	private static AccountSearch opened(String tag, LocalDate from, LocalDate to) {
+		return new AccountSearch(tag, null, new DateRange(from, to), null, null);
+	}
+
+	/** openedAt 으로 개설 시각을 바꾼 계좌와 그 원래 시각. 테스트가 끝나면 되돌린다. */
+	private final Map<Long, Timestamp> backdated = new HashMap<>();
+
+	/**
+	 * 개설 시각을 정해 둔 계좌. 개설은 지금 시각으로만 되므로 만든 뒤 DB 에서 바꾼다(account 는 원장이 아니라 트리거가 없다).
+	 * 다른 테스트(일 마감)는 같은 DB 의 모든 계좌가 오늘 생겼다고 보므로, 바꾼 시각은 테스트 뒤 restoreOpenedAt 에서 되돌린다.
+	 */
+	private Account openedAt(String ownerName, LocalDateTime createdAt) {
+		Account account = accountService.open(ownerName);
+		backdated.put(account.getId(), Timestamp.valueOf(account.getCreatedAt()));
+		jdbcTemplate.update("UPDATE account SET created_at = ? WHERE id = ?", Timestamp.valueOf(createdAt), account.getId());
+		return account;
+	}
+
+	@AfterEach
+	void restoreOpenedAt() {
+		backdated.forEach((id, original) ->
+				jdbcTemplate.update("UPDATE account SET created_at = ? WHERE id = ?", original, id));
+		backdated.clear();
+	}
+
+	private String adminToken() throws Exception {
+		String body = mockMvc.perform(post("/auth/login")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"username\":\"test-admin\",\"password\":\"test-admin-password-1234\"}"))
+				.andExpect(status().isOk())
+				.andReturn().getResponse().getContentAsString();
+		return JsonPath.read(body, "$.accessToken");
 	}
 
 	/** 요약 숫자가 DB 와 맞고, 정상 거래만 있으면 원장 점검은 balanced 다. */
