@@ -28,7 +28,8 @@
 | 감사 로그 | 완료 | API 요청마다 누가·무엇을·어느 계좌에·결과 기록. 실패·거부된 시도와 조회도 남김, DB 트리거로 수정·삭제 차단 |
 | 원장 불변성 | 완료 | 원장 거래·분개·이체 기록의 수정·삭제를 DB 트리거가 거부. 정정은 역분개로 |
 | 횟수 제한 | 완료 | 로그인 5번 연속 실패 시 15분 잠금(관리자 해제 가능), 수취인 조회 고객당 시간당 30번 |
-| DB 계정 분리 | 완료 | 테이블 소유자(Flyway 전용)와 앱 계정 분리. 앱 계정은 필요한 테이블 권한만, DDL 불가 |
+| DB 계정 분리 | 완료 | 테이블 소유자(마이그레이션 전용)와 앱 계정 분리. 앱 계정은 필요한 테이블 권한만, DDL 불가 |
+| 마이그레이션 분리 | 완료 | 마이그레이션은 별도 프로그램(`./gradlew migrate`)이 소유자로 실행. 서버는 DB 버전 확인만 하고 소유자 비밀번호가 필요 없다 |
 
 ## 기술 스택
 
@@ -51,13 +52,17 @@ cp .env.example .env
 # 2. Oracle 실행 (처음에는 이미지 다운로드와 초기화로 몇 분 걸린다). 처음 만들 때 테이블 소유자와 앱 계정을 함께 만든다
 docker compose up -d --wait
 
-# 3. 서버 실행 (http://localhost:8080). .env 는 서버가 직접 읽는다. 시작할 때 Flyway 가 테이블을 만든다
+# 3. 테이블 만들기·변경 (테이블 소유자 계정). 마이그레이션 파일이 바뀔 때마다 서버보다 먼저 실행한다
+./gradlew migrate
+
+# 4. 서버 실행 (http://localhost:8080). .env 는 서버가 직접 읽는다.
+#    서버는 마이그레이션하지 않고, DB 가 코드와 같은 버전인지 확인만 한다. 아니면 시작하지 않는다
 ./gradlew bootRun
 ```
 
 macOS 에서 Colima 를 쓰면 재부팅 뒤 `colima start` 를 먼저 실행한다.
 
-계정 분리 전에 만든 DB 볼륨을 쓰고 있다면 `.env` 의 `DB_USERNAME`/`DB_PASSWORD` 를 `DB_OWNER_USERNAME`/`DB_OWNER_PASSWORD` 로 바꾸고 `DB_APP_USERNAME`/`DB_APP_PASSWORD` 를 추가한 뒤, 앱 계정을 한 번 만든다(앱 권한은 서버가 시작할 때 Flyway 가 준다).
+계정 분리 전에 만든 DB 볼륨을 쓰고 있다면 `.env` 의 `DB_USERNAME`/`DB_PASSWORD` 를 `DB_OWNER_USERNAME`/`DB_OWNER_PASSWORD` 로 바꾸고 `DB_APP_USERNAME`/`DB_APP_PASSWORD` 를 추가한 뒤, 앱 계정을 한 번 만들고 `./gradlew migrate` 를 실행한다(앱 권한은 마이그레이션이 준다).
 
 ```bash
 docker compose up -d --wait
@@ -92,8 +97,9 @@ curl -s localhost:8080/accounts -H "Authorization: Bearer $TOKEN"
 | `.env` 항목 | 설명 |
 |---|---|
 | `ORACLE_PASSWORD` | Oracle 관리자 비밀번호 (컨테이너용) |
-| `DB_OWNER_USERNAME`, `DB_OWNER_PASSWORD` | 테이블 소유자. Flyway 만 쓴다(테이블 생성, 앱 계정에 권한 부여) |
-| `DB_APP_USERNAME`, `DB_APP_PASSWORD` | 서버가 평소에 쓰는 앱 계정. 소유자가 준 권한만 있다 |
+| `DB_OWNER_USERNAME`, `DB_OWNER_PASSWORD` | 테이블 소유자. 마이그레이션만 쓴다(테이블 생성, 앱 계정에 권한 부여). 서버는 이름만 스키마 이름으로 쓰고 비밀번호는 읽지 않는다 |
+| `DB_APP_USERNAME`, `DB_APP_PASSWORD` | 서버가 쓰는 앱 계정. 소유자가 준 권한만 있다 |
+| `DB_URL` | (선택) DB 접속 주소. 기본값은 compose 의 `jdbc:oracle:thin:@//localhost:1521/FREEPDB1` |
 | `JWT_SECRET` | JWT 서명 키, 32바이트 이상 (`openssl rand -base64 48`) |
 | `ADMIN_USERNAME`, `ADMIN_PASSWORD` | 첫 관리자 계정. 서버가 처음 시작할 때 한 번만 만든다 (비밀번호 12자 이상) |
 
@@ -215,13 +221,21 @@ com.corebank
 
 | 계정 | 누가 쓰나 | 할 수 있는 일 |
 |---|---|---|
-| 테이블 소유자 (`DB_OWNER_*`) | Flyway (서버 시작 시 마이그레이션) | 테이블·트리거 생성과 변경, 앱 계정에 권한 부여 |
+| 테이블 소유자 (`DB_OWNER_*`) | 마이그레이션 프로그램 (`MigrationApplication`) | 테이블·트리거 생성과 변경, 앱 계정에 권한 부여 |
 | 앱 계정 (`DB_APP_*`) | 서버 (평소 요청 처리) | 접속(CREATE SESSION)과 소유자가 준 테이블 권한만. 자기 스키마에 객체를 만들 수도 없다 |
+
+- **마이그레이션 분리:** 서버는 Flyway 마이그레이션을 하지 않는다. 시작할 때 앱 계정으로 소유자 스키마의 이력(`flyway_schema_history`, 읽기 권한만)을 읽어 코드와 같은 버전인지 확인(validate)만 하고, 적용 안 된 파일이 있으면 시작하지 않는다(`SchemaVersionCheck`). 마이그레이션은 같은 코드의 다른 실행 진입점 `MigrationApplication` 이 소유자로 한다. 웹·JPA·보안·배치 없이 DataSource 와 Flyway 만 켜고, 설정은 `migration.properties` 를 읽는다. 그래서 소유자 비밀번호는 마이그레이션을 실행하는 곳에만 있으면 된다.
+- **배포 순서:** 같은 jar 로 마이그레이션 → 서버 시작.
+
+  ```bash
+  java -cp app.jar -Dloader.main=com.corebank.migration.MigrationApplication org.springframework.boot.loader.launch.PropertiesLauncher   # 소유자 비밀번호 필요
+  java -jar app.jar                                                                                                                    # 앱 계정만 필요
+  ```
 
 - **권한 목록 한 곳:** `R__app_user_grants.sql`(반복 실행 마이그레이션)이 앱 계정 권한의 전체 목록이다. 파일이 바뀌면 Flyway 가 앱 계정 권한을 모두 거두고 목록대로 다시 준다. 새 테이블을 만들고 여기에 빠뜨리면 테스트가 깨진다.
 - **최소 권한:** 원장·이체·감사 기록·멱등성 키·고객·관리자는 SELECT·INSERT 만 준다. 계좌는 바뀌는 열(잔액, 상태, 해지 시각)만 UPDATE 할 수 있어 계좌번호·이름·개설일은 앱도 못 바꾼다. DELETE 는 횟수 제한 기록(`login_attempt`, `rate_limit`)에만 준다.
 - **스키마:** 앱 계정은 테이블이 없으므로 접속할 때마다 `ALTER SESSION SET CURRENT_SCHEMA` 로 소유자 스키마를 기본으로 정한다(Hikari `connection-init-sql`). SQL 에 스키마 이름을 붙이지 않아도 된다.
-- **계정 만들기:** 앱 계정은 DBA 만 만들 수 있어 `docker/oracle-init/01-create-app-user.sh` 가 DB 초기화 때 만든다. 테스트 컨테이너도 같은 스크립트와 같은 계정 구성으로 뜨므로, 모든 통합 테스트가 앱 계정 권한만으로 돌아간다.
+- **계정 만들기:** 앱 계정은 DBA 만 만들 수 있어 `docker/oracle-init/01-create-app-user.sh` 가 DB 초기화 때 만든다. 테스트 컨테이너도 같은 스크립트와 같은 계정 구성으로 뜨고, 배포처럼 `MigrationApplication` 으로 먼저 마이그레이션한 뒤 서버를 앱 계정으로 띄운다. 그래서 모든 통합 테스트가 앱 계정 권한만으로 돌아간다.
 
 ### 동시성: 비관적 락
 
@@ -320,7 +334,7 @@ Spring Batch 잡 하나가 네 단계를 순서대로 실행한다.
 ./gradlew test    # Docker 필요. Testcontainers 가 Oracle 컨테이너를 띄운다
 ```
 
-- **백엔드 264개**: 엔티티 단위 테스트, MockMvc 웹 계층 테스트, 실제 Oracle 통합 테스트. push·PR 마다 GitHub Actions 가 같은 테스트를 Linux 에서 돌린다(macOS 에서 안 보이던 시각 정밀도 버그를 여기서 찾았다).
+- **백엔드 266개**: 엔티티 단위 테스트, MockMvc 웹 계층 테스트, 실제 Oracle 통합 테스트. push·PR 마다 GitHub Actions 가 같은 테스트를 Linux 에서 돌린다(macOS 에서 안 보이던 시각 정밀도 버그를 여기서 찾았다).
   - 동시 출금·이체·해지에서 잔액과 원장이 맞는지
   - 이체 도중 실패하면 양쪽 모두 롤백되는지
   - 같은 키 동시 재전송이 한 번만 처리되는지
@@ -358,6 +372,8 @@ Spring Batch 잡 하나가 네 단계를 순서대로 실행한다.
 | V13 | 로그인 시도(`login_attempt`), 횟수 제한(`rate_limit`) |
 | R (반복) | 앱 계정 테이블 권한(`R__app_user_grants.sql`). 파일이 바뀔 때마다 다시 실행 |
 
+마이그레이션은 `./gradlew migrate` 로 실행한다(서버는 확인만 한다).
+
 이미 실행된 마이그레이션 파일은 고치지 않는다(Flyway 체크섬 오류). 스키마를 바꿀 때는 새 버전 파일을 추가하고, 새 테이블·시퀀스는 `R__app_user_grants.sql` 에 권한을 추가한다.
 
 ## 알려진 한계
@@ -367,8 +383,9 @@ Spring Batch 잡 하나가 네 단계를 순서대로 실행한다.
 - 일 마감은 불일치를 찾아 기록만 한다. 정정(역분개)과 정정 승인 절차는 없다.
 - 해지 잔액은 현금 지급만 지원한다. 다른 계좌로 이체해 주는 방식은 없다.
 - 감사 기록은 업무가 끝난 뒤 쓴다. 기록 쓰기가 실패해도(DB 장애 등) 이미 처리된 업무는 되돌리지 않고, 같은 내용을 ERROR 로그로 남긴다. 실서비스는 메시지 큐 등으로 유실 없이 옮기는 장치가 필요하다.
-- 테이블 소유자 계정은 트리거를 끄거나 TRUNCATE·DROP 할 수 있다. 개발 환경은 Flyway 가 서버 시작 때 소유자로 접속하므로 소유자 비밀번호도 서버 설정(`.env`)에 있다. 운영에서는 마이그레이션을 배포 단계에서 따로 실행하고 서버에는 앱 계정만 둬야 한다(원장은 우회된 변경도 일 마감 대사가 찾아낸다).
-- 권한 재부여(`R__app_user_grants.sql`)는 권한을 거둔 뒤 다시 주므로, 서버 여러 대가 도는 중에 마이그레이션하면 잠깐 권한 오류가 날 수 있다. 서버 한 대를 가정한다.
+- 테이블 소유자 계정은 트리거를 끄거나 TRUNCATE·DROP 할 수 있다. 서버는 소유자 비밀번호를 읽지 않지만, 개발 환경은 `.env` 하나를 마이그레이션과 서버가 같이 쓰므로 파일에는 들어 있다. 운영에서는 소유자 비밀번호를 배포 단계(마이그레이션 실행)에만 주고 서버 환경에는 두지 않는다(원장은 우회된 변경도 일 마감 대사가 찾아낸다).
+- 권한 재부여(`R__app_user_grants.sql`)는 권한을 거둔 뒤 다시 주므로, 서버가 도는 중에 마이그레이션하면 잠깐 권한 오류가 날 수 있다. 서버를 멈추지 않는 배포(무중단)라면 권한을 차이만 주고 거두는 방식이 필요하다.
+- 마이그레이션은 뒤로 돌리는 기능(undo)이 없다. 잘못된 변경은 새 버전 파일로 바로잡는다.
 - 클라이언트 IP 는 접속한 주소(`remoteAddr`)다. 로드밸런서 뒤에 두면 그 주소가 찍히므로, 믿을 수 있는 프록시의 `X-Forwarded-For` 를 읽도록 설정해야 한다.
 - 감사 기록 보관 기간과 오래된 기록 정리(파티션, 별도 보관소 이관)가 없다.
 - 로그인 잠금은 아이디마다 센다. 여러 아이디에 흔한 비밀번호 하나씩을 넣어 보는 공격(password spraying)은 아이디마다 1번이라 막지 못한다. IP 단위 제한이나 이상 징후 탐지가 필요하다.

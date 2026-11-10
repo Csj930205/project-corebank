@@ -54,6 +54,16 @@ dependencies {
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
+// DB 마이그레이션. 서버(bootRun)는 마이그레이션하지 않고 확인만 하므로, 스키마를 바꾼 뒤 서버보다 먼저 실행한다.
+// 테이블 소유자 계정(.env 의 DB_OWNER_*)으로 접속한다. 설정은 migration.properties.
+tasks.register('migrate', JavaExec) {
+	group = 'application'
+	description = 'Flyway 마이그레이션을 테이블 소유자 계정으로 실행한다.'
+	classpath = sourceSets.main.runtimeClasspath
+	mainClass = 'com.corebank.migration.MigrationApplication'
+	workingDir = projectDir
+}
+
 tasks.named('test') {
 	useJUnitPlatform()
 

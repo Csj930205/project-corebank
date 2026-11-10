@@ -58,6 +58,9 @@ GRANT SELECT, INSERT ON closing_mismatch TO ${app_user};
 GRANT SELECT ON daily_closing_seq TO ${app_user};
 GRANT SELECT ON closing_mismatch_seq TO ${app_user};
 
+-- 마이그레이션 이력: 서버가 시작할 때 DB 버전을 확인(validate)만 한다. Flyway 가 이름을 소문자로 만들어 따옴표가 필요하다.
+GRANT SELECT ON "flyway_schema_history" TO ${app_user};
+
 -- Spring Batch 잡 저장소: 실행 기록을 만들고 진행 상태를 고친다. 지우지는 않는다.
 GRANT SELECT, INSERT, UPDATE ON BATCH_JOB_INSTANCE TO ${app_user};
 GRANT SELECT, INSERT, UPDATE ON BATCH_JOB_EXECUTION TO ${app_user};

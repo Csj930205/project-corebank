@@ -1,5 +1,6 @@
 package com.corebank;
 
+import com.corebank.migration.MigrationApplication;
 import com.corebank.support.SchemaOwner;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -19,7 +20,7 @@ import org.testcontainers.utility.MountableFile;
  * Docker 자원이 모자라 시작 시간 초과가 난다.
  *
  * <p>계정: 컨테이너 사용자(withUsername)가 테이블 소유자이고, docker/oracle-init/01-create-app-user.sh 가 앱 계정을 만든다.
- * 앱(DataSource)은 앱 계정으로, Flyway 는 소유자로 접속한다. 그래서 테스트가 통과하면 앱 계정 권한(R__app_user_grants.sql)이
+ * 마이그레이션(MigrationApplication)은 소유자로, 앱은 앱 계정으로 접속한다. 그래서 테스트가 통과하면 앱 계정 권한(R__app_user_grants.sql)이
  * 모자라지 않다는 것도 함께 확인된다. @ServiceConnection 은 계정을 하나만 연결하므로 쓰지 않고 접속 정보를 직접 넣는다.
  */
 @TestConfiguration(proxyBeanMethods = false)
@@ -42,15 +43,22 @@ public class TestcontainersConfiguration {
 
 	static {
 		ORACLE.start();
+		// 서버는 마이그레이션하지 않으므로(SchemaVersionCheck), 배포 때처럼 마이그레이션 프로그램을 소유자로 먼저 실행한다.
+		// 명령줄 인자는 .env 보다 우선하므로, 로컬 .env 가 있어도 컨테이너 값을 쓴다.
+		MigrationApplication.migrate(
+				"--DB_URL=" + ORACLE.getJdbcUrl(),
+				"--DB_OWNER_USERNAME=" + OWNER_USERNAME,
+				"--DB_OWNER_PASSWORD=" + OWNER_PASSWORD,
+				"--DB_APP_USERNAME=" + APP_USERNAME);
 	}
 
 	/** application.properties 가 .env 에서 읽는 값을 컨테이너 값으로 채운다. */
 	@Bean
 	DynamicPropertyRegistrar oracleProperties() {
 		return registry -> {
-			registry.add("spring.datasource.url", ORACLE::getJdbcUrl);
+			registry.add("DB_URL", ORACLE::getJdbcUrl);
+			// 서버에는 소유자 비밀번호를 주지 않는다. 소유자 이름은 스키마 이름으로만 쓴다.
 			registry.add("DB_OWNER_USERNAME", () -> OWNER_USERNAME);
-			registry.add("DB_OWNER_PASSWORD", () -> OWNER_PASSWORD);
 			registry.add("DB_APP_USERNAME", () -> APP_USERNAME);
 			registry.add("DB_APP_PASSWORD", () -> APP_PASSWORD);
 		};

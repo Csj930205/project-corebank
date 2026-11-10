@@ -72,13 +72,12 @@ class DatabaseAccountSeparationIntegrationTest {
 		assertThat(jdbcTemplate.update("UPDATE account SET balance = balance WHERE id = ?", id)).isEqualTo(1);
 	}
 
-	/** 소유자의 모든 테이블에 앱 권한이 있다. 새 테이블을 만들고 R__app_user_grants.sql 에 빠뜨리면 여기서 깨진다. */
+	/** 소유자의 모든 테이블(마이그레이션 이력 포함)에 앱 권한이 있다. 새 테이블을 만들고 R__app_user_grants.sql 에 빠뜨리면 여기서 깨진다. */
 	@Test
 	void everyOwnerTableIsGrantedToAppUser() {
 		List<String> ungranted = owner.jdbc().queryForList("""
 				SELECT t.table_name FROM user_tables t
-				WHERE t.table_name <> 'flyway_schema_history'
-				  AND NOT EXISTS (SELECT 1 FROM user_tab_privs_made p
+				WHERE NOT EXISTS (SELECT 1 FROM user_tab_privs_made p
 				                  WHERE p.table_name = t.table_name AND p.grantee = 'COREBANK_APP' AND p.privilege = 'SELECT')
 				""", String.class);
 		List<String> ungrantedSequences = owner.jdbc().queryForList("""
