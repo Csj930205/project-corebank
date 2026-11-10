@@ -1,0 +1,4 @@
+# 이미지에는 jar 와 시작 스크립트만 들어간다. 나머지는 빌드 컨텍스트로 보내지 않는다(.env 의 비밀번호 포함).
+*
+!build/libs/project-corebank.jar
+!docker/entrypoint.sh

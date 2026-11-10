@@ -25,6 +25,7 @@
 | 고객 인증 | 완료 | 가입·로그인(JWT), 고객은 본인 계좌만·관리자는 전체, 남의 계좌는 404 로 숨김 |
 | 고객 화면 | 완료 | 로그인 하나로 관리자·고객 구분, 내 계좌, 수취인 확인 후 이체 |
 | CI | 완료 | GitHub Actions. push·PR 마다 전체 테스트를 Linux 와 실제 Oracle 에서 실행 |
+| 배포 자동화 | 완료 | main 에 push → 테스트 통과 시 Docker 이미지를 GHCR 에 올림. `deploy/deploy.sh` 가 마이그레이션 → 서버 교체 → 상태 확인, 실패하면 이전 버전으로 되돌림 |
 | 감사 로그 | 완료 | API 요청마다 누가·무엇을·어느 계좌에·결과 기록. 실패·거부된 시도와 조회도 남김, DB 트리거로 수정·삭제 차단 |
 | 원장 불변성 | 완료 | 원장 거래·분개·이체 기록의 수정·삭제를 DB 트리거가 거부. 정정은 역분개로 |
 | 횟수 제한 | 완료 | 로그인 5번 연속 실패 시 15분 잠금(관리자 해제 가능), 수취인 조회 고객당 시간당 30번 |
@@ -39,6 +40,7 @@
 | DB | Oracle Database Free 23 (Docker), Flyway 마이그레이션 |
 | 데이터 접근 | Spring Data JPA, 집계는 네이티브 SQL |
 | 테스트·CI | JUnit 5, Testcontainers(실제 Oracle), MockMvc, Postman CLI, GitHub Actions |
+| 배포 | Docker 이미지(GHCR, amd64·arm64), Docker Compose, Spring Boot Actuator(상태 확인) |
 | 화면 | React, TypeScript, Vite, TanStack Query (별도 프로젝트) |
 
 ## 실행 방법
@@ -104,6 +106,31 @@ curl -s localhost:8080/accounts -H "Authorization: Bearer $TOKEN"
 | `ADMIN_USERNAME`, `ADMIN_PASSWORD` | 첫 관리자 계정. 서버가 처음 시작할 때 한 번만 만든다 (비밀번호 12자 이상) |
 
 횟수 제한(로그인 잠금 횟수·시간, 수취인 조회 한도)과 자동 마감 시각은 `src/main/resources/application.properties` 에 기본값이 있다.
+
+### 배포 (Docker 이미지)
+
+main 에 push 하면 CI 가 테스트를 돌리고, 통과하면 그 커밋의 jar 로 서버 이미지를 만들어 GHCR(`ghcr.io/csj930205/project-corebank`)에 올린다. 태그는 커밋 sha 와 `latest`.
+배포는 스크립트 하나로 한다. 같은 compose 의 Oracle 을 쓰고, 서버는 `APP_PORT`(기본 8080)로 뜬다(개발 서버 `bootRun` 과 동시에 띄우지 않는다).
+
+```bash
+deploy/deploy.sh                  # GHCR 의 latest
+deploy/deploy.sh <커밋 sha 전체>   # 특정 버전 (예전 버전으로 되돌릴 때도)
+deploy/deploy.sh --local          # 지금 코드로 이미지를 직접 만들어 배포 (테스트는 건너뜀)
+docker compose --profile deploy down   # 배포한 서버 내리기 (DB 는 그대로)
+```
+
+| 단계 | 하는 일 | 실패하면 |
+|---|---|---|
+| 1. 이미지 | GHCR 에서 받기(또는 `--local` 빌드) | 멈춤 |
+| 2. 마이그레이션 | `migrate` 컨테이너가 테이블 소유자로 실행하고 끝남 | 멈춤. 서버는 그대로 |
+| 3. 서버 교체 | `app` 컨테이너를 새 이미지로 다시 만듦 | - |
+| 4. 상태 확인 | `/actuator/health` 가 90초 안에 UP 인지 | 로그를 보여 주고 이전 이미지로 되돌림 |
+
+- **한 이미지, 두 실행:** `docker run <이미지>` 는 서버, `docker run <이미지> migrate` 는 마이그레이션(`docker/entrypoint.sh`). 테스트를 통과한 jar 를 복사만 한다.
+- **비밀번호 분리:** compose 가 소유자 비밀번호는 `migrate` 컨테이너에만, 앱 계정은 `app` 컨테이너에만 넘긴다. 서버 컨테이너 환경에는 소유자 비밀번호가 없다.
+- **되돌리기가 되는 이유:** 서버는 시작할 때 DB 버전을 확인하지만 자기보다 새 마이그레이션은 허용한다(Flyway 기본값). 그래서 마이그레이션 뒤에 이전 이미지로 돌아가도 뜬다. 대신 마이그레이션은 이전 코드와 호환되게 쓴다(열 삭제·이름 변경은 추가 → 코드 전환 → 다음 배포에서 삭제로 나눈다).
+- **이미지 설정:** root 가 아닌 사용자로 실행, 시간대 `Asia/Seoul`(일 마감 영업일이 서버 시간대를 따른다).
+- **상태 확인 주소:** `/actuator/health` 만 열고 UP/DOWN 만 보인다(DB 연결 포함). 다른 actuator 주소(환경 변수 등)는 열지 않는다.
 
 ## API
 
@@ -334,7 +361,7 @@ Spring Batch 잡 하나가 네 단계를 순서대로 실행한다.
 ./gradlew test    # Docker 필요. Testcontainers 가 Oracle 컨테이너를 띄운다
 ```
 
-- **백엔드 266개**: 엔티티 단위 테스트, MockMvc 웹 계층 테스트, 실제 Oracle 통합 테스트. push·PR 마다 GitHub Actions 가 같은 테스트를 Linux 에서 돌린다(macOS 에서 안 보이던 시각 정밀도 버그를 여기서 찾았다).
+- **백엔드 268개**: 엔티티 단위 테스트, MockMvc 웹 계층 테스트, 실제 Oracle 통합 테스트. push·PR 마다 GitHub Actions 가 같은 테스트를 Linux 에서 돌린다(macOS 에서 안 보이던 시각 정밀도 버그를 여기서 찾았다).
   - 동시 출금·이체·해지에서 잔액과 원장이 맞는지
   - 이체 도중 실패하면 양쪽 모두 롤백되는지
   - 같은 키 동시 재전송이 한 번만 처리되는지
@@ -378,6 +405,8 @@ Spring Batch 잡 하나가 네 단계를 순서대로 실행한다.
 
 ## 알려진 한계
 
+- 배포 대상은 이 PC 의 Docker 다(클라우드 서버 없음). 서버를 바꿔 끼우는 동안 몇 초 끊긴다(무중단 배포 아님). 실제 서버라면 CI 가 SSH 등으로 그 서버에서 `deploy/deploy.sh <sha>` 를 실행하면 된다.
+- 마이그레이션 자체는 되돌리지 않는다. 서버만 이전 이미지로 돌아간다.
 - 리프레시 토큰과 토큰 강제 무효화(로그아웃 차단 목록)가 없다. 그래서 토큰 수명을 30분으로 짧게 둔다.
 - 일 마감은 서버 한 대를 가정한다. 여러 대를 띄우면 각자 자동 마감을 실행하므로 ShedLock 같은 분산 잠금이 필요하다(같은 날짜 동시 실행은 DB 가 하나만 통과시킨다).
 - 일 마감은 불일치를 찾아 기록만 한다. 정정(역분개)과 정정 승인 절차는 없다.
