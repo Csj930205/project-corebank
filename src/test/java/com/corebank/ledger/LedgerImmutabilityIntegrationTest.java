@@ -2,6 +2,7 @@ package com.corebank.ledger;
 
 import com.corebank.TestcontainersConfiguration;
 import com.corebank.account.AccountService;
+import com.corebank.support.SchemaOwner;
 import com.corebank.transfer.TransferService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,7 +18,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * 원장 불변성(V12). 원장 거래·분개·이체 기록은 앱 계정의 SQL 로도 고치거나 지울 수 없고, 추가(정상 거래)는 그대로 된다.
+ * 원장 불변성. 원장 거래·분개·이체 기록은 고치거나 지울 수 없고, 추가(정상 거래)는 그대로 된다. 두 겹으로 막는다.
+ * <ul>
+ *   <li>앱 계정: UPDATE·DELETE 권한이 없다(R__app_user_grants.sql). ORA-41900</li>
+ *   <li>테이블 소유자: 권한은 있지만 트리거(V12)가 거부한다. ORA-20002</li>
+ * </ul>
  */
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
@@ -31,6 +36,9 @@ class LedgerImmutabilityIntegrationTest {
 
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
+
+	@Autowired
+	private SchemaOwner owner;
 
 	/** 입금 원장: 금액도 거래 후 잔액도 못 바꾸고, 지우지도 못한다. 값은 그대로다. */
 	@Test
@@ -81,7 +89,7 @@ class LedgerImmutabilityIntegrationTest {
 	 */
 	@Test
 	void appendOnlyTriggersAreEnabled() {
-		List<String> statuses = jdbcTemplate.queryForList("""
+		List<String> statuses = owner.jdbc().queryForList("""
 				SELECT status FROM user_triggers
 				WHERE trigger_name IN ('TRG_LEDGER_TRANSACTION_APPEND_ONLY', 'TRG_LEDGER_ENTRY_APPEND_ONLY',
 				                       'TRG_TRANSFER_APPEND_ONLY', 'TRG_AUDIT_LOG_APPEND_ONLY')
@@ -90,8 +98,12 @@ class LedgerImmutabilityIntegrationTest {
 		assertThat(statuses).hasSize(4).containsOnly("ENABLED");
 	}
 
+	/** 앱 계정은 권한에서, 소유자는 트리거에서 막힌다. */
 	private void assertRejected(String sql, Object... args) {
 		assertThatThrownBy(() -> jdbcTemplate.update(sql, args))
+				.isInstanceOf(DataAccessException.class)
+				.hasMessageContaining("ORA-41900");
+		assertThatThrownBy(() -> owner.jdbc().update(sql, args))
 				.isInstanceOf(DataAccessException.class)
 				.hasMessageContaining("ORA-20002");
 	}

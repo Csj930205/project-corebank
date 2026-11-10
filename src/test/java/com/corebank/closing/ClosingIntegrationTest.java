@@ -1,6 +1,7 @@
 package com.corebank.closing;
 
 import com.corebank.support.LedgerTampering;
+import com.corebank.support.SchemaOwner;
 import com.corebank.TestcontainersConfiguration;
 import com.corebank.account.AccountService;
 import com.corebank.ledger.TransactionType;
@@ -75,6 +76,9 @@ class ClosingIntegrationTest {
 
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
+
+	@Autowired
+	private SchemaOwner owner;
 
 	@Autowired
 	private MockMvc mockMvc;
@@ -192,8 +196,8 @@ class ClosingIntegrationTest {
 		Long id = openWithBalance("거래후잔액조작", 10_000);
 		Long lastTx = jdbcTemplate.queryForObject(
 				"SELECT MAX(id) FROM ledger_transaction WHERE account_id = ?", Long.class, id);
-		LedgerTampering.withoutAppendOnlyTriggers(jdbcTemplate, () -> jdbcTemplate.update(
-				"UPDATE ledger_transaction SET balance_after = balance_after + 5 WHERE id = ?", lastTx));
+		LedgerTampering.withoutAppendOnlyTriggers(owner,
+				"UPDATE ledger_transaction SET balance_after = balance_after + 5 WHERE id = ?", lastTx);
 		try {
 			DailyClosing closing = closeToday();
 
@@ -204,8 +208,8 @@ class ClosingIntegrationTest {
 						assertThat(m.actual()).isEqualByComparingTo("10005");
 					});
 		} finally {
-			LedgerTampering.withoutAppendOnlyTriggers(jdbcTemplate, () -> jdbcTemplate.update(
-					"UPDATE ledger_transaction SET balance_after = balance_after - 5 WHERE id = ?", lastTx));
+			LedgerTampering.withoutAppendOnlyTriggers(owner,
+					"UPDATE ledger_transaction SET balance_after = balance_after - 5 WHERE id = ?", lastTx);
 		}
 	}
 
@@ -214,8 +218,8 @@ class ClosingIntegrationTest {
 	void detectsUnbalancedTransaction() {
 		Long id = accountService.open("분개조작").getId();
 		Long txId = accountService.deposit(id, 10_000, newKey()).value().getId();
-		LedgerTampering.withoutAppendOnlyTriggers(jdbcTemplate, () -> jdbcTemplate.update(
-				"UPDATE ledger_entry SET amount = amount + 1 WHERE transaction_id = ? AND ledger_account = 'CASH'", txId));
+		LedgerTampering.withoutAppendOnlyTriggers(owner,
+				"UPDATE ledger_entry SET amount = amount + 1 WHERE transaction_id = ? AND ledger_account = 'CASH'", txId);
 		try {
 			DailyClosing closing = closeToday();
 
@@ -227,8 +231,8 @@ class ClosingIntegrationTest {
 					});
 			assertThat(mismatches(closing)).noneMatch(m -> id.equals(m.accountId()) && m.transactionId() == null);
 		} finally {
-			LedgerTampering.withoutAppendOnlyTriggers(jdbcTemplate, () -> jdbcTemplate.update(
-					"UPDATE ledger_entry SET amount = amount - 1 WHERE transaction_id = ? AND ledger_account = 'CASH'", txId));
+			LedgerTampering.withoutAppendOnlyTriggers(owner,
+					"UPDATE ledger_entry SET amount = amount - 1 WHERE transaction_id = ? AND ledger_account = 'CASH'", txId);
 		}
 	}
 
@@ -252,7 +256,7 @@ class ClosingIntegrationTest {
 						assertThat(m.actual()).isEqualByComparingTo("0");
 					});
 		} finally {
-			LedgerTampering.withoutAppendOnlyTriggers(jdbcTemplate, () -> jdbcTemplate.update("DELETE FROM transfer WHERE id = ?", transferId));
+			LedgerTampering.withoutAppendOnlyTriggers(owner, "DELETE FROM transfer WHERE id = ?", transferId);
 		}
 	}
 
@@ -265,10 +269,10 @@ class ClosingIntegrationTest {
 		Long outTx = jdbcTemplate.queryForObject(
 				"SELECT id FROM ledger_transaction WHERE transfer_id = ? AND transaction_type = 'TRANSFER_OUT'",
 				Long.class, transferId);
-		LedgerTampering.withoutAppendOnlyTriggers(jdbcTemplate, () -> jdbcTemplate.update("""
+		LedgerTampering.withoutAppendOnlyTriggers(owner, """
 				UPDATE ledger_entry SET amount = amount + 1
 				WHERE transaction_id = ? AND ledger_account = 'TRANSFER_CLEARING'
-				""", outTx));
+				""", outTx);
 		try {
 			DailyClosing closing = closeToday();
 
@@ -277,10 +281,10 @@ class ClosingIntegrationTest {
 			assertThat(mismatches(closing)).filteredOn(m -> outTx.equals(m.transactionId()))
 					.extracting(ClosingMismatch::type).containsExactly(MismatchType.UNBALANCED_TRANSACTION);
 		} finally {
-			LedgerTampering.withoutAppendOnlyTriggers(jdbcTemplate, () -> jdbcTemplate.update("""
+			LedgerTampering.withoutAppendOnlyTriggers(owner, """
 					UPDATE ledger_entry SET amount = amount - 1
 					WHERE transaction_id = ? AND ledger_account = 'TRANSFER_CLEARING'
-					""", outTx));
+					""", outTx);
 		}
 	}
 

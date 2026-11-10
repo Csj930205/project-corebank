@@ -1,6 +1,7 @@
 package com.corebank.audit;
 
 import com.corebank.TestcontainersConfiguration;
+import com.corebank.support.SchemaOwner;
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,6 +44,9 @@ class AuditLogIntegrationTest {
 
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
+
+	@Autowired
+	private SchemaOwner owner;
 
 	// ───────────────────────── 돈이 움직이는 요청 ─────────────────────────
 
@@ -266,17 +270,27 @@ class AuditLogIntegrationTest {
 
 	// ───────────────────────── 위변조 방지 ─────────────────────────
 
-	/** 한 번 쓴 기록은 앱 계정으로도 고치거나 지울 수 없다(DB 트리거). */
+	/**
+	 * 한 번 쓴 기록은 고치거나 지울 수 없다. 앱 계정은 UPDATE·DELETE 권한이 없어(ORA-41900) 막히고,
+	 * 권한이 있는 테이블 소유자도 트리거(ORA-20001)에 막힌다.
+	 */
 	@Test
 	void auditLogIsAppendOnly() throws Exception {
 		MvcResult result = mockMvc.perform(get("/accounts/{id}", 1L)).andReturn();
 		String requestId = result.getResponse().getHeader(AuditLogFilter.REQUEST_ID_HEADER);
+		String update = "UPDATE audit_log SET outcome = 'SUCCESS' WHERE request_id = ?";
+		String delete = "DELETE FROM audit_log WHERE request_id = ?";
 
-		assertThatThrownBy(() -> jdbcTemplate.update(
-				"UPDATE audit_log SET outcome = 'SUCCESS' WHERE request_id = ?", requestId))
+		assertThatThrownBy(() -> jdbcTemplate.update(update, requestId))
+				.isInstanceOf(DataAccessException.class)
+				.hasMessageContaining("ORA-41900");
+		assertThatThrownBy(() -> jdbcTemplate.update(delete, requestId))
+				.isInstanceOf(DataAccessException.class)
+				.hasMessageContaining("ORA-41900");
+		assertThatThrownBy(() -> owner.jdbc().update(update, requestId))
 				.isInstanceOf(DataAccessException.class)
 				.hasMessageContaining("ORA-20001");
-		assertThatThrownBy(() -> jdbcTemplate.update("DELETE FROM audit_log WHERE request_id = ?", requestId))
+		assertThatThrownBy(() -> owner.jdbc().update(delete, requestId))
 				.isInstanceOf(DataAccessException.class)
 				.hasMessageContaining("ORA-20001");
 		assertThat(rowOf(result).get("OUTCOME")).isEqualTo("DENIED");

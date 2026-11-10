@@ -35,7 +35,8 @@ public class Account {
 	@Column(name = "account_number", nullable = false, updatable = false, length = 13)
 	private String accountNumber;
 
-	@Column(name = "owner_name", nullable = false, length = 100)
+	// 앱 DB 계정은 잔액·상태·해지 시각 열만 UPDATE 할 수 있다(R__app_user_grants.sql). 나머지 열은 UPDATE 문에서 뺀다.
+	@Column(name = "owner_name", nullable = false, updatable = false, length = 100)
 	private String ownerName;
 
 	// 원 단위 정수. double 은 소수 계산 오차가 생기므로 금액에 쓰지 않는다.

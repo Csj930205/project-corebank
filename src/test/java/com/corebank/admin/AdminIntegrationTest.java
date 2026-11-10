@@ -6,6 +6,7 @@ import com.corebank.account.AccountService;
 import com.corebank.account.AccountStatus;
 import com.corebank.transfer.TransferService;
 import com.corebank.common.DateRange;
+import com.corebank.support.SchemaOwner;
 import com.jayway.jsonpath.JsonPath;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
@@ -55,6 +56,9 @@ class AdminIntegrationTest {
 
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
+
+	@Autowired
+	private SchemaOwner owner;
 
 	@Autowired
 	private MockMvc mockMvc;
@@ -206,20 +210,20 @@ class AdminIntegrationTest {
 	private final Map<Long, Timestamp> backdated = new HashMap<>();
 
 	/**
-	 * 개설 시각을 정해 둔 계좌. 개설은 지금 시각으로만 되므로 만든 뒤 DB 에서 바꾼다(account 는 원장이 아니라 트리거가 없다).
+	 * 개설 시각을 정해 둔 계좌. 개설은 지금 시각으로만 되므로 만든 뒤 DB 에서 바꾼다. 앱 계정은 개설일을 바꿀 수 없어 테이블 소유자로 바꾼다.
 	 * 다른 테스트(일 마감)는 같은 DB 의 모든 계좌가 오늘 생겼다고 보므로, 바꾼 시각은 테스트 뒤 restoreOpenedAt 에서 되돌린다.
 	 */
 	private Account openedAt(String ownerName, LocalDateTime createdAt) {
 		Account account = accountService.open(ownerName);
 		backdated.put(account.getId(), Timestamp.valueOf(account.getCreatedAt()));
-		jdbcTemplate.update("UPDATE account SET created_at = ? WHERE id = ?", Timestamp.valueOf(createdAt), account.getId());
+		owner.jdbc().update("UPDATE account SET created_at = ? WHERE id = ?", Timestamp.valueOf(createdAt), account.getId());
 		return account;
 	}
 
 	@AfterEach
 	void restoreOpenedAt() {
 		backdated.forEach((id, original) ->
-				jdbcTemplate.update("UPDATE account SET created_at = ? WHERE id = ?", original, id));
+				owner.jdbc().update("UPDATE account SET created_at = ? WHERE id = ?", original, id));
 		backdated.clear();
 	}
 

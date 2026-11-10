@@ -8,11 +8,17 @@ services:
     # 값은 .env 에서 읽는다. .env 가 없으면 안내 메시지를 보여 주고 실행을 멈춘다.
     environment:
       ORACLE_PASSWORD: ${ORACLE_PASSWORD:?copy .env.example to .env}
-      APP_USER: ${DB_USERNAME:?copy .env.example to .env}
-      APP_USER_PASSWORD: ${DB_PASSWORD:?copy .env.example to .env}
+      # 테이블 소유자. 이미지가 DB 를 처음 만들 때 이 계정을 만든다.
+      APP_USER: ${DB_OWNER_USERNAME:?copy .env.example to .env}
+      APP_USER_PASSWORD: ${DB_OWNER_PASSWORD:?copy .env.example to .env}
+      # 앱 실행 계정. docker/oracle-init/01-create-app-user.sh 가 만든다.
+      DB_APP_USERNAME: ${DB_APP_USERNAME:?copy .env.example to .env}
+      DB_APP_PASSWORD: ${DB_APP_PASSWORD:?copy .env.example to .env}
     # 컨테이너를 지워도 데이터가 남도록 볼륨에 저장한다.
     volumes:
       - oracle-data:/opt/oracle/oradata
+      # DB 를 처음 만들 때 실행할 스크립트(앱 계정 생성)
+      - ./docker/oracle-init:/container-entrypoint-initdb.d:ro
     # DB 가 접속 가능한 상태인지 확인한다. --wait 옵션은 이 검사가 통과할 때까지 기다린다.
     healthcheck:
       test: ["CMD", "healthcheck.sh"]
