@@ -30,6 +30,8 @@ class AuditActionTest {
 	void onlyAccountPathsHaveTargetAccount() {
 		assertThat(AuditAction.match("GET", "/admin/closings/7"))
 				.hasValue(new AuditAction.Match(AuditAction.CLOSING_VIEW, null));
+		assertThat(AuditAction.match("POST", "/admin/corrections/7/approval"))
+				.hasValue(new AuditAction.Match(AuditAction.CORRECTION_APPROVE, null));
 		assertThat(AuditAction.match("POST", "/accounts/abc/deposits"))
 				.hasValue(new AuditAction.Match(AuditAction.DEPOSIT, null));
 	}

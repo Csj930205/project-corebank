@@ -10,7 +10,12 @@ import com.corebank.account.AccountResponse;
 import com.corebank.account.AccountStatus;
 import com.corebank.common.DateRange;
 import org.springframework.format.annotation.DateTimeFormat;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.RequestBody;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
@@ -20,7 +25,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.net.URI;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -32,10 +39,13 @@ public class AdminController {
 
 	private final AdminQueryService queryService;
 	private final LoginThrottle loginThrottle;
+	private final AdminUserService adminUserService;
 
-	public AdminController(AdminQueryService queryService, LoginThrottle loginThrottle) {
+	public AdminController(AdminQueryService queryService, LoginThrottle loginThrottle,
+			AdminUserService adminUserService) {
 		this.queryService = queryService;
 		this.loginThrottle = loginThrottle;
+		this.adminUserService = adminUserService;
 	}
 
 	/**
@@ -88,6 +98,38 @@ public class AdminController {
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void unlockLogin(@PathVariable @Size(max = 50) String username) {
 		loginThrottle.unlock(username);
+	}
+
+	/**
+	 * 관리자 등록 요청. 아이디 규칙은 고객과 같고, 비밀번호는 첫 관리자(.env)와 같이 12자 이상이다.
+	 */
+	public record CreateAdminRequest(
+			@NotBlank @Pattern(regexp = "[a-z][a-z0-9_]{3,29}") String username,
+			@NotBlank @Size(min = 12, max = 100) String password) {
+	}
+
+	/** 비밀번호 해시는 내보내지 않는다. */
+	public record AdminUserResponse(Long id, String username, LocalDateTime createdAt) {
+
+		static AdminUserResponse from(AdminUser user) {
+			return new AdminUserResponse(user.getId(), user.getUsername(), user.getCreatedAt());
+		}
+	}
+
+	public record AdminUsers(List<AdminUserResponse> content) {
+	}
+
+	/** GET /admin/admins : 관리자 목록(등록 순) */
+	@GetMapping("/admins")
+	public AdminUsers admins() {
+		return new AdminUsers(adminUserService.list().stream().map(AdminUserResponse::from).toList());
+	}
+
+	/** POST /admin/admins {username, password} : 관리자 등록. 201, 이미 쓰는 아이디면 409 USERNAME_TAKEN */
+	@PostMapping("/admins")
+	public ResponseEntity<AdminUserResponse> createAdmin(@Valid @RequestBody CreateAdminRequest request) {
+		AdminUser user = adminUserService.create(request.username(), request.password());
+		return ResponseEntity.created(URI.create("/admin/admins/" + user.getId())).body(AdminUserResponse.from(user));
 	}
 
 	/** GET /admin/summary : 계좌 현황과 원장 점검 결과 */

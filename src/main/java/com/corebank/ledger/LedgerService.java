@@ -6,10 +6,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 import org.springframework.data.domain.Limit;
 
+import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -110,6 +113,56 @@ public class LedgerService {
 	@Transactional(propagation = Propagation.MANDATORY)
 	public Optional<LedgerTransaction> findClosurePayout(Long accountId) {
 		return transactionRepository.findByAccountIdAndType(accountId, TransactionType.CLOSURE_PAYOUT);
+	}
+
+	/**
+	 * 정정할 원장 거래 묶음. 입출금은 그 거래 하나, 이체는 출금 쪽과 입금 쪽 두 거래다(반쪽만 되돌리면 이체 가계정이 어긋난다).
+	 * 출금 쪽이 먼저 온다.
+	 *
+	 * @return 없는 거래면 빈 목록
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	public List<LedgerTransaction> findCorrectionTargets(Long transactionId) {
+		Optional<LedgerTransaction> found = transactionRepository.findById(transactionId);
+		if (found.isEmpty() || found.get().getTransferId() == null) {
+			return found.map(List::of).orElse(List.of());
+		}
+		return transactionRepository.findByTransferId(found.get().getTransferId()).stream()
+				.sorted(Comparator.comparing(transaction -> transaction.getType() != TransactionType.TRANSFER_OUT))
+				.toList();
+	}
+
+	@Transactional(propagation = Propagation.MANDATORY)
+	public boolean isReversed(Long transactionId) {
+		return transactionRepository.existsByReversalOfId(transactionId);
+	}
+
+	/** 여러 이체의 원장 거래(출금 쪽, 입금 쪽)를 한 번의 쿼리로 읽는다. */
+	@Transactional(propagation = Propagation.MANDATORY)
+	public List<LedgerTransaction> findTransferLegs(Collection<Long> transferIds) {
+		return transferIds.isEmpty() ? List.of() : transactionRepository.findByTransferIdIn(transferIds);
+	}
+
+	/** 여러 거래의 역분개를 한 번의 쿼리로 읽는다. 되돌린 원래 거래 id → 역분개 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	public Map<Long, LedgerTransaction> findReversals(Collection<Long> transactionIds) {
+		return transactionIds.isEmpty() ? Map.of() : transactionRepository.findByReversalOfIdIn(transactionIds).stream()
+				.collect(Collectors.toMap(LedgerTransaction::getReversalOfId, Function.identity()));
+	}
+
+	/**
+	 * 역분개를 기록한다. 원래 거래의 분개를 모두 읽어 차변·대변을 바꿔 다시 쓴다. 입금·출금·이체 어느 쪽이든 같은 규칙이라
+	 * 거래 종류마다 분개를 따로 정하지 않는다. 예: 입금(차변 현금 / 대변 고객 예금) → 역분개(차변 고객 예금 / 대변 현금).
+	 *
+	 * <p>계좌 잔액은 호출하는 쪽이 잠금을 잡고 먼저 바꾼다. 여기서는 그 결과(balanceAfter)를 기록만 한다.
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	public LedgerTransaction recordReversal(LedgerTransaction original, long balanceAfter) {
+		LedgerTransaction reversal = transactionRepository.save(LedgerTransaction.reversalOf(original, balanceAfter));
+		entryRepository.saveAll(entryRepository.findByTransactionIdOrderById(original.getId()).stream()
+				.map(entry -> entry.reversedFor(reversal.getId()))
+				.toList());
+		return reversal;
 	}
 
 	/**

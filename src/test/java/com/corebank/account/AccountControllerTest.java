@@ -192,7 +192,7 @@ class AccountControllerTest {
 	void transactionsUseDefaultSize() throws Exception {
 		TransactionHistoryResponse.Item item = new TransactionHistoryResponse.Item(
 				5L, com.corebank.ledger.TransactionType.TRANSFER_IN, TransactionHistoryResponse.Direction.IN,
-				3000, 13000, 2L, new TransactionHistoryResponse.Counterparty(9L, "1100000000009", "친구"),
+				3000, 13000, 2L, new TransactionHistoryResponse.Counterparty(9L, "1100000000009", "친구"), null,
 				java.time.LocalDateTime.of(2026, 11, 3, 10, 0));
 		given(accountService.history(1L, null, 20))
 				.willReturn(new TransactionHistoryResponse(1L, java.util.List.of(item), 5L));

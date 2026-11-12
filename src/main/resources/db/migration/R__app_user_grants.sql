@@ -58,6 +58,11 @@ GRANT SELECT, INSERT ON closing_mismatch TO ${app_user};
 GRANT SELECT ON daily_closing_seq TO ${app_user};
 GRANT SELECT ON closing_mismatch_seq TO ${app_user};
 
+-- 거래 정정 요청: 만들고, 결정(승인·반려)할 때 결정 관련 열만 바꾼다. 대상 거래·사유·요청자는 앱도 못 바꾼다.
+GRANT SELECT, INSERT ON correction_request TO ${app_user};
+GRANT UPDATE (status, decided_by, decided_at, decision_comment, version) ON correction_request TO ${app_user};
+GRANT SELECT ON correction_request_seq TO ${app_user};
+
 -- 마이그레이션 이력: 서버가 시작할 때 DB 버전을 확인(validate)만 한다. Flyway 가 이름을 소문자로 만들어 따옴표가 필요하다.
 GRANT SELECT ON "flyway_schema_history" TO ${app_user};
 

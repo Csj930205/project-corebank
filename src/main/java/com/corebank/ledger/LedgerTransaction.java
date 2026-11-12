@@ -41,6 +41,10 @@ public class LedgerTransaction {
 	@Column(name = "transfer_id", updatable = false)
 	private Long transferId;
 
+	// 역분개 거래일 때만 값이 있다. 되돌린 원래 거래의 id 다. 한 거래는 한 번만 되돌릴 수 있다(ux_ledger_transaction_reversal).
+	@Column(name = "reversal_of_id", updatable = false)
+	private Long reversalOfId;
+
 	@Column(nullable = false, updatable = false)
 	private long amount;
 
@@ -77,6 +81,18 @@ public class LedgerTransaction {
 
 	static LedgerTransaction transferOut(Long accountId, Long transferId, long amount, long balanceAfter) {
 		return new LedgerTransaction(TransactionType.TRANSFER_OUT, accountId, transferId, amount, balanceAfter);
+	}
+
+	/**
+	 * original 을 되돌리는 역분개. 금액은 같고 잔액 방향만 반대다. 이체 번호는 넣지 않는다(V14 주석 참고).
+	 *
+	 * @param balanceAfter 역분개를 반영한 뒤 계좌 잔액
+	 */
+	static LedgerTransaction reversalOf(LedgerTransaction original, long balanceAfter) {
+		TransactionType type = original.type.increasesBalance() ? TransactionType.REVERSAL_OUT : TransactionType.REVERSAL_IN;
+		LedgerTransaction reversal = new LedgerTransaction(type, original.accountId, null, original.amount, balanceAfter);
+		reversal.reversalOfId = original.id;
+		return reversal;
 	}
 
 	static LedgerTransaction transferIn(Long accountId, Long transferId, long amount, long balanceAfter) {

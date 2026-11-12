@@ -83,4 +83,10 @@ public class LedgerEntry {
 		return new LedgerEntry(transactionId, LedgerAccount.CUSTOMER_DEPOSIT, accountId, EntrySide.DEBIT, amount);
 	}
 
+	/** 역분개 분개: 같은 계정과목·계좌·금액에 차변과 대변만 바꾼다. 원래 거래의 분개를 모두 이렇게 뒤집으면 합이 0이 된다. */
+	LedgerEntry reversedFor(Long reversalTransactionId) {
+		EntrySide opposite = side == EntrySide.DEBIT ? EntrySide.CREDIT : EntrySide.DEBIT;
+		return new LedgerEntry(reversalTransactionId, ledgerAccount, accountId, opposite, amount);
+	}
+
 }

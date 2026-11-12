@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "project-corebank API",
-    "description": "계좌 개설/조회, 입금, 출금, 이체, 멱등성, 거래내역, 계좌 해지, 일 마감, 고객 인증, 감사 로그, 횟수 제한 전체 회귀 테스트. 위에서부터 순서대로 실행해야 한다(앞 요청이 만든 계좌 id를 뒤에서 쓴다).",
+    "description": "계좌 개설/조회, 입금, 출금, 이체, 멱등성, 거래내역, 계좌 해지, 일 마감, 고객 인증, 감사 로그, 횟수 제한, 계좌 검색, 거래 정정 전체 회귀 테스트. 위에서부터 순서대로 실행해야 한다(앞 요청이 만든 계좌 id를 뒤에서 쓴다).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -7188,6 +7188,1089 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "14. 거래 정정 (관리자)",
+      "description": "잘못된 거래는 원장을 고치지 않고 역분개로 되돌린다. 한 관리자가 요청하고 다른 관리자가 승인해야 한다(4-eyes). 승인자는 이 폴더가 새로 등록하는 두 번째 관리자다.",
+      "item": [
+        {
+          "name": "정정용 계좌 개설",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"ownerName\":\"정정테스트\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"corrAccountId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10,000원 입금",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{corrAccountId}}/deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{corrAccountId}}",
+                "deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":10000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "90,000원 잘못 입금 (정정 대상)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{corrAccountId}}/deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{corrAccountId}}",
+                "deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":90000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"corrTxId\", pm.response.json().transactionId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "두 번째 관리자 등록 (승인자)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/admins",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "admins"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"username\":\"{{checkerUser}}\",\"password\":\"{{checkerPassword}}\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 매번 새 관리자. 비밀번호도 실행마다 만들어 파일에 남지 않게 한다.",
+                  "pm.collectionVariables.set(\"checkerUser\", \"checker_\" + Date.now());",
+                  "pm.collectionVariables.set(\"checkerPassword\", \"pw-\" + pm.variables.replaceIn(\"{{$guid}}\"));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"아이디만 돌려주고 비밀번호 해시는 없다\", () => { pm.expect(b.username).to.eql(pm.collectionVariables.get(\"checkerUser\")); pm.expect(b).to.not.have.property(\"passwordHash\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "이미 쓰는 아이디로 관리자 등록",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/admins",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "admins"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"username\":\"{{checkerUser}}\",\"password\":\"another-password\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"에러 코드 USERNAME_TAKEN\", () => pm.expect(pm.response.json().code).to.eql(\"USERNAME_TAKEN\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "두 번째 관리자 로그인",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"username\":\"{{checkerUser}}\",\"password\":\"{{checkerPassword}}\"}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"관리자 토큰\", () => pm.expect(pm.response.json().role).to.eql(\"ADMIN\"));",
+                  "pm.collectionVariables.set(\"checkerToken\", pm.response.json().accessToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "정정 요청 (첫 관리자)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/corrections",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "corrections"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"transactionId\":{{corrTxId}},\"reason\":\"10,000원을 100,000원으로 잘못 입력\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"승인 대기, 대상 거래 정보\", () => {",
+                  "  pm.expect(b.status).to.eql(\"REQUESTED\");",
+                  "  pm.expect(b.requestedBy).to.eql(pm.variables.get(\"adminUsername\"));",
+                  "  pm.expect(b.transactionType).to.eql(\"DEPOSIT\");",
+                  "  pm.expect(b.amount).to.eql(90000);",
+                  "  pm.expect(b.reversalTransactionIds).to.eql([]);",
+                  "});",
+                  "pm.test(\"Location 헤더\", () => pm.expect(pm.response.headers.get(\"Location\")).to.eql(\"/admin/corrections/\" + b.id));",
+                  "pm.collectionVariables.set(\"corrId\", b.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "같은 거래 다시 요청",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/corrections",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "corrections"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"transactionId\":{{corrTxId}},\"reason\":\"중복 요청\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"에러 코드 CORRECTION_ALREADY_REQUESTED\", () => pm.expect(pm.response.json().code).to.eql(\"CORRECTION_ALREADY_REQUESTED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "요청만으로는 잔액 그대로 (100,000원)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{corrAccountId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{corrAccountId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"잔액 100000\", () => pm.expect(pm.response.json().balance).to.eql(100000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "요청한 관리자가 승인",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/corrections/{{corrId}}/approval",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "corrections",
+                "{{corrId}}",
+                "approval"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 403\", () => pm.response.to.have.status(403));",
+                  "pm.test(\"에러 코드 SELF_APPROVAL_NOT_ALLOWED\", () => pm.expect(pm.response.json().code).to.eql(\"SELF_APPROVAL_NOT_ALLOWED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "반려 사유 없이 반려",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/corrections/{{corrId}}/rejection",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "corrections",
+                "{{corrId}}",
+                "rejection"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"comment\":\" \"}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "다른 관리자가 승인",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/corrections/{{corrId}}/approval",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "corrections",
+                "{{corrId}}",
+                "approval"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"comment\":\"고객 확인함\"}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"승인, 역분개 1건\", () => {",
+                  "  pm.expect(b.status).to.eql(\"APPROVED\");",
+                  "  pm.expect(b.decidedBy).to.eql(pm.collectionVariables.get(\"checkerUser\"));",
+                  "  pm.expect(b.decisionComment).to.eql(\"고객 확인함\");",
+                  "  pm.expect(b.reversalTransactionIds.length).to.eql(1);",
+                  "});",
+                  "pm.collectionVariables.set(\"corrReversalId\", b.reversalTransactionIds[0]);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "다시 승인",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/corrections/{{corrId}}/approval",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "corrections",
+                "{{corrId}}",
+                "approval"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"에러 코드 CORRECTION_ALREADY_DECIDED\", () => pm.expect(pm.response.json().code).to.eql(\"CORRECTION_ALREADY_DECIDED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "정정 후 잔액 (10,000원)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{corrAccountId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{corrAccountId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"잔액 10000\", () => pm.expect(pm.response.json().balance).to.eql(10000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "거래내역 최신이 역분개 (REVERSAL_OUT)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{corrAccountId}}/transactions?size=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{corrAccountId}}",
+                "transactions"
+              ],
+              "query": [
+                {
+                  "key": "size",
+                  "value": "1"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "const t = pm.response.json().transactions[0];",
+                  "pm.test(\"역분개: 나간 돈, 원래 거래를 가리킨다\", () => {",
+                  "  pm.expect(t.type).to.eql(\"REVERSAL_OUT\");",
+                  "  pm.expect(t.direction).to.eql(\"OUT\");",
+                  "  pm.expect(t.amount).to.eql(90000);",
+                  "  pm.expect(t.balanceAfter).to.eql(10000);",
+                  "  pm.expect(String(t.reversalOfId)).to.eql(String(pm.collectionVariables.get(\"corrTxId\")));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "정정된 거래 다시 요청",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/corrections",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "corrections"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"transactionId\":{{corrTxId}},\"reason\":\"또 정정\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"에러 코드 ALREADY_REVERSED\", () => pm.expect(pm.response.json().code).to.eql(\"ALREADY_REVERSED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "역분개 거래는 정정 불가",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/corrections",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "corrections"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"transactionId\":{{corrReversalId}},\"reason\":\"되돌림의 되돌림\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"에러 코드 NOT_CORRECTABLE\", () => pm.expect(pm.response.json().code).to.eql(\"NOT_CORRECTABLE\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "없는 거래 정정 요청",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/corrections",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "corrections"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"transactionId\":999999999,\"reason\":\"없음\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"에러 코드 TRANSACTION_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"TRANSACTION_NOT_FOUND\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "사유 없이 정정 요청",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/corrections",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "corrections"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"transactionId\":{{corrTxId}}}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "반려용 1,000원 입금",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{corrAccountId}}/deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{corrAccountId}}",
+                "deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":1000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"corrTx2Id\", pm.response.json().transactionId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "반려용 정정 요청",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/corrections",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "corrections"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"transactionId\":{{corrTx2Id}},\"reason\":\"확인 필요\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"corr2Id\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "승인 대기 목록에 보인다",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/corrections?status=REQUESTED&size=100",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "corrections"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "REQUESTED"
+                },
+                {
+                  "key": "size",
+                  "value": "100"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"모두 REQUESTED, 방금 요청 포함\", () => {",
+                  "  b.content.forEach(c => pm.expect(c.status).to.eql(\"REQUESTED\"));",
+                  "  pm.expect(b.content.map(c => String(c.id))).to.include(String(pm.collectionVariables.get(\"corr2Id\")));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "다른 관리자가 반려",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/corrections/{{corr2Id}}/rejection",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "corrections",
+                "{{corr2Id}}",
+                "rejection"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"comment\":\"고객 확인 결과 정상 입금\"}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"반려, 역분개 없음\", () => { pm.expect(b.status).to.eql(\"REJECTED\"); pm.expect(b.reversalTransactionIds).to.eql([]); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "반려 후 잔액 그대로 (11,000원)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{corrAccountId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{corrAccountId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"잔액 11000\", () => pm.expect(pm.response.json().balance).to.eql(11000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "정정 요청 상세",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/corrections/{{corrId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "corrections",
+                "{{corrId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"승인된 요청\", () => pm.expect(pm.response.json().status).to.eql(\"APPROVED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "없는 정정 요청 조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/corrections/999999999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "corrections",
+                "999999999"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"에러 코드 CORRECTION_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"CORRECTION_NOT_FOUND\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "승인은 감사 로그에 대상 계좌와 함께",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/audit-logs?action=CORRECTION_APPROVE&accountId={{corrAccountId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "audit-logs"
+              ],
+              "query": [
+                {
+                  "key": "action",
+                  "value": "CORRECTION_APPROVE"
+                },
+                {
+                  "key": "accountId",
+                  "value": "{{corrAccountId}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"성공 1건, 승인자 기록\", () => {",
+                  "  const ok = b.content.filter(l => l.outcome === \"SUCCESS\");",
+                  "  pm.expect(ok.length).to.eql(1);",
+                  "  pm.expect(ok[0].actorUsername).to.eql(pm.collectionVariables.get(\"checkerUser\"));",
+                  "});"
                 ]
               }
             }

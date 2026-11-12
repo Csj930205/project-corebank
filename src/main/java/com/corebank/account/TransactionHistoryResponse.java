@@ -22,10 +22,7 @@ public record TransactionHistoryResponse(
 		IN, OUT;
 
 		static Direction of(TransactionType type) {
-			return switch (type) {
-				case DEPOSIT, TRANSFER_IN -> IN;
-				case WITHDRAWAL, TRANSFER_OUT, CLOSURE_PAYOUT -> OUT;
-			};
+			return type.increasesBalance() ? IN : OUT;
 		}
 	}
 
@@ -35,6 +32,7 @@ public record TransactionHistoryResponse(
 	 * @param amount       거래 금액. 항상 양수이고, 방향은 direction 으로 구분한다.
 	 * @param balanceAfter 거래 직후 잔액
 	 * @param counterparty 이체 상대 계좌. 입출금은 null
+	 * @param reversalOfId 역분개일 때 되돌린 원래 거래 id. 그 밖에는 null
 	 */
 	public record Item(
 			Long transactionId,
@@ -44,6 +42,7 @@ public record TransactionHistoryResponse(
 			long balanceAfter,
 			Long transferId,
 			Counterparty counterparty,
+			Long reversalOfId,
 			LocalDateTime createdAt) {
 
 		static Item of(LedgerTransaction transaction, Counterparty counterparty) {
@@ -55,6 +54,7 @@ public record TransactionHistoryResponse(
 					transaction.getBalanceAfter(),
 					transaction.getTransferId(),
 					counterparty,
+					transaction.getReversalOfId(),
 					transaction.getCreatedAt());
 		}
 	}

@@ -38,6 +38,13 @@ public enum AuditAction {
 	CLOSING_RUN("POST", "/admin/closings"),
 	CLOSING_LIST("GET", "/admin/closings"),
 	CLOSING_VIEW("GET", "/admin/closings/{id}"),
+	CORRECTION_REQUEST("POST", "/admin/corrections"),
+	CORRECTION_LIST("GET", "/admin/corrections"),
+	CORRECTION_VIEW("GET", "/admin/corrections/{id}"),
+	CORRECTION_APPROVE("POST", "/admin/corrections/{id}/approval"),
+	CORRECTION_REJECT("POST", "/admin/corrections/{id}/rejection"),
+	ADMIN_USER_LIST("GET", "/admin/admins"),
+	ADMIN_USER_CREATE("POST", "/admin/admins"),
 	// 감사 기록을 본 것도 남긴다. 누가 누구의 기록을 찾아봤는지가 다시 감사 대상이다.
 	AUDIT_LOG_SEARCH("GET", "/admin/audit-logs");
 
@@ -50,7 +57,8 @@ public enum AuditAction {
 	}
 
 	/**
-	 * @param accountId 경로의 {id} 가 계좌 번호일 때 그 값. 마감 상세(/admin/closings/{id})는 계좌가 아니므로 null.
+	 * @param accountId 경로의 {id} 가 계좌 번호일 때 그 값. /accounts/ 아래 경로만 해당하고, 마감 상세나 정정 요청의 {id} 는
+	 *                  계좌가 아니므로 null 이다.
 	 */
 	public record Match(AuditAction action, Long accountId) {
 	}
@@ -71,7 +79,7 @@ public enum AuditAction {
 
 	private Long accountIdFrom(Map<String, String> variables) {
 		String id = variables.get("id");
-		if (id == null || this == CLOSING_VIEW) {
+		if (id == null || !pattern.getPatternString().startsWith("/accounts/")) {
 			return null;
 		}
 		try {

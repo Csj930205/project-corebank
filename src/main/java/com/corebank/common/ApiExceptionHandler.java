@@ -13,6 +13,11 @@ import com.corebank.auth.InvalidCredentialsException;
 import com.corebank.closing.BusinessDateNotEndedException;
 import com.corebank.closing.ClosingAlreadyRunningException;
 import com.corebank.closing.ClosingNotFoundException;
+import com.corebank.correction.CorrectionConflictException;
+import com.corebank.correction.CorrectionNotFoundException;
+import com.corebank.correction.NotCorrectableException;
+import com.corebank.correction.SelfApprovalException;
+import com.corebank.correction.TransactionNotFoundException;
 import com.corebank.idempotency.IdempotencyKey;
 import com.corebank.idempotency.IdempotencyKeyReusedException;
 import com.corebank.idempotency.InvalidIdempotencyKeyException;
@@ -126,6 +131,41 @@ public class ApiExceptionHandler {
 	@ResponseStatus(HttpStatus.UNPROCESSABLE_CONTENT)
 	public ErrorResponse handleBusinessDateNotEnded(BusinessDateNotEndedException e) {
 		return new ErrorResponse("BUSINESS_DATE_NOT_ENDED", e.getMessage());
+	}
+
+	/** 없는 정정 요청: 404 */
+	@ExceptionHandler(CorrectionNotFoundException.class)
+	@ResponseStatus(HttpStatus.NOT_FOUND)
+	public ErrorResponse handleCorrectionNotFound(CorrectionNotFoundException e) {
+		return new ErrorResponse("CORRECTION_NOT_FOUND", e.getMessage());
+	}
+
+	/** 정정하려는 원장 거래가 없음: 404 */
+	@ExceptionHandler(TransactionNotFoundException.class)
+	@ResponseStatus(HttpStatus.NOT_FOUND)
+	public ErrorResponse handleTransactionNotFound(TransactionNotFoundException e) {
+		return new ErrorResponse("TRANSACTION_NOT_FOUND", e.getMessage());
+	}
+
+	/** 정정할 수 없는 거래(해지 지급, 역분개): 422 */
+	@ExceptionHandler(NotCorrectableException.class)
+	@ResponseStatus(HttpStatus.UNPROCESSABLE_CONTENT)
+	public ErrorResponse handleNotCorrectable(NotCorrectableException e) {
+		return new ErrorResponse("NOT_CORRECTABLE", e.getMessage());
+	}
+
+	/** 이미 정정됨, 승인 대기 요청이 있음, 이미 결정됨: 409. 원인은 코드로 구분한다. */
+	@ExceptionHandler(CorrectionConflictException.class)
+	@ResponseStatus(HttpStatus.CONFLICT)
+	public ErrorResponse handleCorrectionConflict(CorrectionConflictException e) {
+		return new ErrorResponse(e.getCode(), e.getMessage());
+	}
+
+	/** 요청한 관리자가 스스로 결정: 403. 관리자 권한은 있지만 이 요청에 대해서는 결정할 수 없다. */
+	@ExceptionHandler(SelfApprovalException.class)
+	@ResponseStatus(HttpStatus.FORBIDDEN)
+	public ErrorResponse handleSelfApproval(SelfApprovalException e) {
+		return new ErrorResponse("SELF_APPROVAL_NOT_ALLOWED", e.getMessage());
 	}
 
 	/** 이미 쓰는 아이디로 가입: 409 */
