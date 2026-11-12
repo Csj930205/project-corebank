@@ -8,6 +8,8 @@
 
 - 화면: 별도 프로젝트 [`project-corebank-front`](https://github.com/Csj930205/project-corebank-front) (React + TypeScript)
 - 처음 기획과 후보 비교: [`docs/기획_2026-11-02.md`](docs/기획_2026-11-02.md)
+- 날짜별 작업 정리(무엇을·왜·어떻게 검증했나): [`docs/작업정리_2026-11-12.pdf`](docs/작업정리_2026-11-12.pdf) (최신, 거래 정정·예금 이자·관리자 역할 분리·이자 결산 배치), 이전 것은 [`docs/`](docs) 의 `작업정리_*.pdf`
+- 코드로 공부하기(JPA·트랜잭션·Spring Batch 등을 이 코드에서 찾아보는 안내): [`docs/학습가이드_코드로_공부하기.pdf`](docs/학습가이드_코드로_공부하기.pdf)
 
 ## 진행 상황
 
