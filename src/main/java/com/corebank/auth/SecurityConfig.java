@@ -31,7 +31,7 @@ import java.nio.charset.StandardCharsets;
  *   <li>GET /accounts (내 계좌 목록) : 고객 토큰(scope=CUSTOMER)</li>
  *   <li>/accounts/**, /transfers/** : 관리자 또는 고객. 고객이 본인 계좌만 다루는지는 컨트롤러가
  *       AccountAccessPolicy 로 확인한다. 어떤 계좌인지는 요청 내용을 봐야 알 수 있어 URL 규칙만으로는 못 정한다.</li>
- *   <li>/auth/me : 로그인한 사용자</li>
+ *   <li>/auth/me, GET /products : 로그인한 사용자</li>
  *   <li>그 밖 : 누구나. 없는 경로는 404 RESOURCE_NOT_FOUND 로 응답하기 위해서다.</li>
  * </ul>
  *
@@ -65,6 +65,7 @@ public class SecurityConfig {
 						.requestMatchers(HttpMethod.GET, "/accounts").hasAuthority("SCOPE_CUSTOMER")
 						.requestMatchers("/accounts/**", "/transfers/**").hasAnyAuthority("SCOPE_ADMIN", "SCOPE_CUSTOMER")
 						.requestMatchers(HttpMethod.GET, "/auth/me").authenticated()
+						.requestMatchers(HttpMethod.GET, "/products").hasAnyAuthority("SCOPE_ADMIN", "SCOPE_CUSTOMER")
 						.anyRequest().permitAll())
 				.oauth2ResourceServer(oauth2 -> oauth2
 						.jwt(jwt -> {

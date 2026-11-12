@@ -9,6 +9,9 @@ import com.corebank.idempotency.IdempotentResult;
 import com.corebank.ledger.LedgerHistoryEntry;
 import com.corebank.ledger.LedgerService;
 import com.corebank.ledger.LedgerTransaction;
+import com.corebank.product.DepositProduct;
+import com.corebank.product.ProductService;
+import com.corebank.interest.InterestService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,13 +35,18 @@ public class AccountService {
 	private final LedgerService ledgerService;
 	private final IdempotencyService idempotencyService;
 	private final CustomerService customerService;
+	private final ProductService productService;
+	private final InterestService interestService;
 
 	public AccountService(AccountRepository accountRepository, LedgerService ledgerService,
-			IdempotencyService idempotencyService, CustomerService customerService) {
+			IdempotencyService idempotencyService, CustomerService customerService, ProductService productService,
+			InterestService interestService) {
+		this.interestService = interestService;
 		this.accountRepository = accountRepository;
 		this.ledgerService = ledgerService;
 		this.idempotencyService = idempotencyService;
 		this.customerService = customerService;
+		this.productService = productService;
 	}
 
 	/**
@@ -48,14 +56,32 @@ public class AccountService {
 	 */
 	@Transactional
 	public Account open(String ownerName) {
-		return accountRepository.save(Account.open(nextAccountNumber(), ownerName));
+		return open(ownerName, null);
+	}
+
+	/**
+	 * 상품을 골라 계좌를 연다. productId 가 null 이면 기본 상품이다.
+	 *
+	 * @throws com.corebank.product.ProductNotFoundException     없는 상품
+	 * @throws com.corebank.product.ProductNotAvailableException 판매 중지된 상품
+	 */
+	@Transactional
+	public Account open(String ownerName, Long productId) {
+		DepositProduct product = productService.forNewAccount(productId);
+		return accountRepository.save(Account.open(nextAccountNumber(), ownerName, product));
 	}
 
 	/** 고객 명의로 계좌를 연다. 예금주 이름은 가입할 때 적은 고객 이름이다. */
 	@Transactional
 	public Account openForCustomer(Long customerId) {
+		return openForCustomer(customerId, null);
+	}
+
+	@Transactional
+	public Account openForCustomer(Long customerId, Long productId) {
 		Customer customer = customerService.get(customerId);
-		return accountRepository.save(Account.openFor(nextAccountNumber(), customer.getName(), customer.getId()));
+		DepositProduct product = productService.forNewAccount(productId);
+		return accountRepository.save(Account.openFor(nextAccountNumber(), customer.getName(), customer.getId(), product));
 	}
 
 	/** 고객의 계좌 목록(해지 계좌 포함, 최신 개설순). */
@@ -163,6 +189,11 @@ public class AccountService {
 			return IdempotentResult.replayed(new AccountClosure(account, ledgerService.findClosurePayout(id).orElse(null)));
 		}
 
+		// 해지 전에 어제까지 쌓인 이자를 잔액에 넣는다. 그래야 해지 지급액에 이자까지 함께 나간다.
+		// 이미 해지된 계좌면 바로 아래 close() 가 ACCOUNT_CLOSED 로 거부하므로 이자를 건드리지 않는다.
+		if (account.getStatus() == AccountStatus.ACTIVE) {
+			interestService.payOnClosure(account);
+		}
 		long payout = account.close();
 		LedgerTransaction payoutTransaction = payout > 0 ? ledgerService.recordClosurePayout(id, payout) : null;
 		idempotencyService.record(key, IdempotentOperation.CLOSURE, fingerprint, id);

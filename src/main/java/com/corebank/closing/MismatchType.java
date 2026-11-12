@@ -8,7 +8,7 @@ public enum MismatchType {
 	BALANCE_LEDGER_MISMATCH,
 	/** 마감 시점 마지막 거래의 "거래 후 잔액"이 마감 시점까지의 원장 합계와 다르다. 거래 기록이 원장과 어긋난 경우다. */
 	SNAPSHOT_MISMATCH,
-	/** 영업일 거래 한 건의 차변 합과 대변 합이 다르다(복식부기 위반). */
+	/** 영업일 거래 한 건의 차변 합과 대변 합이 다르거나, 고객 예금 분개가 거래 금액과 다르다(복식부기 위반). */
 	UNBALANCED_TRANSACTION,
 	/** 영업일 이체 한 건의 원장 거래가 2건(출금 쪽, 입금 쪽)이 아니다. 반쪽만 기록된 이체다. */
 	INCOMPLETE_TRANSFER,

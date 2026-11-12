@@ -95,6 +95,11 @@ public class LedgerTransaction {
 		return reversal;
 	}
 
+	/** 이자 지급. amount 는 고객 잔액에 더해진 세후 금액이다(세전·세금은 분개와 interest_payment 에 있다). */
+	static LedgerTransaction interest(Long accountId, long netAmount, long balanceAfter) {
+		return new LedgerTransaction(TransactionType.INTEREST, accountId, null, netAmount, balanceAfter);
+	}
+
 	static LedgerTransaction transferIn(Long accountId, Long transferId, long amount, long balanceAfter) {
 		return new LedgerTransaction(TransactionType.TRANSFER_IN, accountId, transferId, amount, balanceAfter);
 	}

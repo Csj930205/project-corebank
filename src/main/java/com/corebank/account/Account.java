@@ -1,13 +1,17 @@
 package com.corebank.account;
 
 import com.corebank.common.DbTime;
+import com.corebank.product.DepositProduct;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.SequenceGenerator;
 import jakarta.persistence.Table;
 import lombok.Getter;
@@ -56,6 +60,20 @@ public class Account {
 	@Column(name = "customer_id", updatable = false)
 	private Long customerId;
 
+	/*
+	 * 예금 상품(금리). customerId 처럼 값만 두지 않고 연관관계로 둔 이유: 계좌 화면과 목록이 늘 상품 이름·금리를 함께 보여 주고,
+	 * 이자 적립이 계좌의 금리를 쓴다. "계좌 → 상품" 한 방향만 둔다(상품에서 계좌 목록으로 가는 @OneToMany 는 만들지 않는다).
+	 * 상품 하나에 계좌가 수십만 개 붙을 수 있어, 그 컬렉션을 읽는 순간 전부 메모리로 올라오기 때문이다.
+	 *
+	 * LAZY: @ManyToOne 기본값(EAGER)이면 계좌를 읽을 때마다 상품을 바로 조회한다. 목록 20건이면 상품 조회가 따로 나간다(N+1).
+	 * LAZY 면 처음에는 프록시(빈 껍데기)를 넣어 두고, getName() 처럼 실제 값을 읽을 때 조회한다. 목록 쿼리는
+	 * @EntityGraph 로 계좌와 상품을 한 번에 읽는다(AccountRepository).
+	 * updatable = false: 계좌의 상품은 바꾸지 않는다(앱 DB 계정도 이 열의 UPDATE 권한이 없다).
+	 */
+	@ManyToOne(fetch = FetchType.LAZY, optional = false)
+	@JoinColumn(name = "product_id", nullable = false, updatable = false)
+	private DepositProduct product;
+
 	// 해지 시각. 정상 계좌는 null 이다. DB 의 ck_account_closed 제약이 상태와 짝이 맞는지 확인한다.
 	@Column(name = "closed_at")
 	private LocalDateTime closedAt;
@@ -96,8 +114,10 @@ public class Account {
 	protected Account() {
 	}
 
-	private Account(String accountNumber, String ownerName, Long customerId, LocalDateTime createdAt) {
+	private Account(String accountNumber, String ownerName, Long customerId, DepositProduct product,
+			LocalDateTime createdAt) {
 		this.accountNumber = accountNumber;
+		this.product = product;
 		this.ownerName = ownerName;
 		this.customerId = customerId;
 		this.balance = 0;
@@ -106,13 +126,13 @@ public class Account {
 	}
 
 	/** 새 계좌를 만든다. 이 메서드로만 생성되므로 모든 계좌는 잔액 0, ACTIVE 상태로 시작한다. */
-	public static Account open(String accountNumber, String ownerName) {
-		return new Account(accountNumber, ownerName, null, DbTime.now());
+	public static Account open(String accountNumber, String ownerName, DepositProduct product) {
+		return new Account(accountNumber, ownerName, null, product, DbTime.now());
 	}
 
 	/** 고객 명의로 새 계좌를 만든다. 예금주 이름은 고객 이름이다. */
-	public static Account openFor(String accountNumber, String ownerName, Long customerId) {
-		return new Account(accountNumber, ownerName, customerId, DbTime.now());
+	public static Account openFor(String accountNumber, String ownerName, Long customerId, DepositProduct product) {
+		return new Account(accountNumber, ownerName, customerId, product, DbTime.now());
 	}
 
 	/** 이 고객의 계좌인지 */

@@ -166,6 +166,28 @@ public class LedgerService {
 	}
 
 	/**
+	 * 이자 지급을 기록한다. 세 줄 분개로 차변 합과 대변 합이 같다(세전 = 세후 + 세금).
+	 * <pre>
+	 * 차변 이자비용       gross
+	 *       대변 고객 예금        net   (고객 잔액 증가)
+	 *       대변 이자세 예수금    tax   (세금이 0원이면 이 줄은 없다. 분개 금액은 1원 이상이어야 한다)
+	 * </pre>
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	public LedgerTransaction recordInterest(Long accountId, long gross, long tax, long balanceAfter) {
+		long net = gross - tax;
+		LedgerTransaction transaction = transactionRepository.save(LedgerTransaction.interest(accountId, net, balanceAfter));
+		List<LedgerEntry> entries = new java.util.ArrayList<>(List.of(
+				LedgerEntry.interestExpenseDebit(transaction.getId(), gross),
+				LedgerEntry.customerDepositCredit(transaction.getId(), accountId, net)));
+		if (tax > 0) {
+			entries.add(LedgerEntry.interestTaxCredit(transaction.getId(), tax));
+		}
+		entryRepository.saveAll(entries);
+		return transaction;
+	}
+
+	/**
 	 * 이체를 기록한다. 계좌별로 거래를 하나씩 남기고, 두 거래 사이는 이체 가계정으로 잇는다.
 	 * <pre>
 	 * 출금 쪽 거래: 차변 고객 예금(보내는 계좌) / 대변 이체 가계정

@@ -1,5 +1,7 @@
 package com.corebank.account;
 
+import com.corebank.product.DepositProduct;
+
 import com.corebank.idempotency.IdempotencyKey;
 import com.corebank.auth.SecurityConfig;
 import com.corebank.support.AdminByDefault;
@@ -36,6 +38,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest(AccountController.class)
 class AccountControllerTest {
 
+	private static final DepositProduct PRODUCT = DepositProduct.of("기본 입출금 통장", new java.math.BigDecimal("0.10"));
+
 	@Autowired
 	private MockMvc mockMvc;
 
@@ -55,7 +59,7 @@ class AccountControllerTest {
 	/** 정상 개설: 201 과 계좌 정보를 반환한다. */
 	@Test
 	void openReturnsCreatedAccount() throws Exception {
-		given(accountService.open("홍길동")).willReturn(Account.open("1100000000001", "홍길동"));
+		given(accountService.open("홍길동", null)).willReturn(Account.open("1100000000001", "홍길동", PRODUCT));
 
 		mockMvc.perform(post("/accounts")
 						.contentType(MediaType.APPLICATION_JSON)
@@ -82,7 +86,7 @@ class AccountControllerTest {
 	/** 정상 조회: 200 과 계좌 정보를 반환한다. */
 	@Test
 	void getReturnsAccount() throws Exception {
-		given(accountService.get(1L)).willReturn(Account.open("1100000000001", "홍길동"));
+		given(accountService.get(1L)).willReturn(Account.open("1100000000001", "홍길동", PRODUCT));
 
 		mockMvc.perform(get("/accounts/1"))
 				.andExpect(status().isOk())
@@ -291,7 +295,7 @@ class AccountControllerTest {
 
 	/** 잔액 10,000원을 지급하고 해지된 계좌. 서비스가 돌려줄 결과를 만든다. */
 	private static AccountClosure closureWithPayout() {
-		Account account = Account.open("1100000000001", "홍길동");
+		Account account = Account.open("1100000000001", "홍길동", PRODUCT);
 		ReflectionTestUtils.setField(account, "id", 1L);
 		account.deposit(10_000);
 		account.close();
@@ -334,7 +338,7 @@ class AccountControllerTest {
 	/** 잔액 0 해지: 지급액 0, 지급 거래 ID 는 null 이다. */
 	@Test
 	void closeWithZeroBalanceReturnsNoPayout() throws Exception {
-		Account account = Account.open("1100000000001", "홍길동");
+		Account account = Account.open("1100000000001", "홍길동", PRODUCT);
 		account.close();
 		given(accountService.close(1L, KEY)).willReturn(IdempotentResult.created(new AccountClosure(account, null)));
 

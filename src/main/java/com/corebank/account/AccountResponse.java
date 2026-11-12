@@ -1,5 +1,8 @@
 package com.corebank.account;
 
+import com.corebank.product.DepositProduct;
+
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -15,7 +18,12 @@ public record AccountResponse(
 		AccountStatus status,
 		LocalDateTime createdAt,
 		// 정상 계좌는 null
-		LocalDateTime closedAt) {
+		LocalDateTime closedAt,
+		Product product) {
+
+	/** 계좌의 예금 상품. annualRate 는 연이율(%) */
+	public record Product(Long id, String name, BigDecimal annualRate) {
+	}
 
 	public static AccountResponse from(Account account) {
 		return new AccountResponse(
@@ -26,7 +34,13 @@ public record AccountResponse(
 				account.getBalance(),
 				account.getStatus(),
 				account.getCreatedAt(),
-				account.getClosedAt());
+				account.getClosedAt(),
+				// 여기서 상품 이름을 읽는 순간 LAZY 프록시가 초기화된다. 목록 쿼리가 상품을 함께 읽지 않았다면 계좌마다 쿼리가 나간다.
+				product(account.getProduct()));
+	}
+
+	private static Product product(DepositProduct product) {
+		return product == null ? null : new Product(product.getId(), product.getName(), product.getAnnualRate());
 	}
 
 }

@@ -63,6 +63,17 @@ GRANT SELECT, INSERT ON correction_request TO ${app_user};
 GRANT UPDATE (status, decided_by, decided_at, decision_comment, version) ON correction_request TO ${app_user};
 GRANT SELECT ON correction_request_seq TO ${app_user};
 
+-- 예금 상품: 등록과 판매 중지(상태·중지 시각)만. 이름·금리는 바꾸지 않는다.
+GRANT SELECT, INSERT ON deposit_product TO ${app_user};
+GRANT UPDATE (status, discontinued_at) ON deposit_product TO ${app_user};
+GRANT SELECT ON deposit_product_seq TO ${app_user};
+
+-- 이자: 적수는 쌓고 지급할 때 지급 번호만 채운다. 지급 기록은 추가만.
+GRANT SELECT, INSERT ON interest_accrual TO ${app_user};
+GRANT UPDATE (payment_id) ON interest_accrual TO ${app_user};
+GRANT SELECT, INSERT ON interest_payment TO ${app_user};
+GRANT SELECT ON interest_payment_seq TO ${app_user};
+
 -- 마이그레이션 이력: 서버가 시작할 때 DB 버전을 확인(validate)만 한다. Flyway 가 이름을 소문자로 만들어 따옴표가 필요하다.
 GRANT SELECT ON "flyway_schema_history" TO ${app_user};
 

@@ -13,6 +13,11 @@ import com.corebank.auth.InvalidCredentialsException;
 import com.corebank.closing.BusinessDateNotEndedException;
 import com.corebank.closing.ClosingAlreadyRunningException;
 import com.corebank.closing.ClosingNotFoundException;
+import com.corebank.interest.AccrualAlreadyRunningException;
+import com.corebank.interest.MonthNotEndedException;
+import com.corebank.product.ProductNameTakenException;
+import com.corebank.product.ProductNotAvailableException;
+import com.corebank.product.ProductNotFoundException;
 import com.corebank.correction.CorrectionConflictException;
 import com.corebank.correction.CorrectionNotFoundException;
 import com.corebank.correction.NotCorrectableException;
@@ -131,6 +136,41 @@ public class ApiExceptionHandler {
 	@ResponseStatus(HttpStatus.UNPROCESSABLE_CONTENT)
 	public ErrorResponse handleBusinessDateNotEnded(BusinessDateNotEndedException e) {
 		return new ErrorResponse("BUSINESS_DATE_NOT_ENDED", e.getMessage());
+	}
+
+	/** 없는 예금 상품: 404 */
+	@ExceptionHandler(ProductNotFoundException.class)
+	@ResponseStatus(HttpStatus.NOT_FOUND)
+	public ErrorResponse handleProductNotFound(ProductNotFoundException e) {
+		return new ErrorResponse("PRODUCT_NOT_FOUND", e.getMessage());
+	}
+
+	/** 판매 중지된 상품으로 개설, 이미 중지됐거나 기본 상품을 중지: 409 */
+	@ExceptionHandler(ProductNotAvailableException.class)
+	@ResponseStatus(HttpStatus.CONFLICT)
+	public ErrorResponse handleProductNotAvailable(ProductNotAvailableException e) {
+		return new ErrorResponse("PRODUCT_NOT_AVAILABLE", e.getMessage());
+	}
+
+	/** 같은 이름의 상품: 409 */
+	@ExceptionHandler(ProductNameTakenException.class)
+	@ResponseStatus(HttpStatus.CONFLICT)
+	public ErrorResponse handleProductNameTaken(ProductNameTakenException e) {
+		return new ErrorResponse("PRODUCT_NAME_TAKEN", e.getMessage());
+	}
+
+	/** 이번 달이나 미래 달 결산: 422 */
+	@ExceptionHandler(MonthNotEndedException.class)
+	@ResponseStatus(HttpStatus.UNPROCESSABLE_CONTENT)
+	public ErrorResponse handleMonthNotEnded(MonthNotEndedException e) {
+		return new ErrorResponse("MONTH_NOT_ENDED", e.getMessage());
+	}
+
+	/** 같은 날 이자 적립이 동시에 실행됨: 409 */
+	@ExceptionHandler(AccrualAlreadyRunningException.class)
+	@ResponseStatus(HttpStatus.CONFLICT)
+	public ErrorResponse handleAccrualRunning(AccrualAlreadyRunningException e) {
+		return new ErrorResponse("ACCRUAL_ALREADY_RUNNING", e.getMessage());
 	}
 
 	/** 없는 정정 요청: 404 */

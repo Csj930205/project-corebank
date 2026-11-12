@@ -12,5 +12,9 @@ public enum LedgerAccount {
 	 * 이체 가계정 (은행 내부). 이체의 출금 쪽 거래에서 대변, 입금 쪽 거래에서 차변으로 같은 금액이 들어가므로
 	 * 이체가 끝나면 합계가 항상 0이다. 0이 아니면 반쪽만 기록된 이체가 있다는 뜻이다.
 	 */
-	TRANSFER_CLEARING
+	TRANSFER_CLEARING,
+	/** 이자비용 (비용). 은행이 고객에게 지급한 이자 전액(세전). 비용은 차변에서 는다. */
+	INTEREST_EXPENSE,
+	/** 이자소득세 예수금 (부채). 이자에서 떼어 두었다가 세무서에 낼 돈. 부채라 대변에서 는다. */
+	INTEREST_TAX_PAYABLE
 }

@@ -114,23 +114,31 @@ public class ClosingRepository {
 	}
 
 	/**
-	 * 영업일 거래 하나하나의 복식부기를 확인한다. 차변 합 = 대변 합 = 거래 금액이어야 한다.
-	 * 분개가 하나도 없는 거래(LEFT JOIN 으로 합계 0)도 여기서 걸린다.
+	 * 영업일 거래 하나하나의 복식부기를 확인한다. 두 가지를 본다.
+	 * <ol>
+	 *   <li>차변 합 = 대변 합</li>
+	 *   <li>고객 예금 분개 금액 = 거래 금액(고객 잔액이 움직인 금액)</li>
+	 * </ol>
+	 * 예전에는 "차변 합 = 대변 합 = 거래 금액" 이었다. 이자는 한쪽이 두 줄인 복합 분개라(차변 이자비용 200 / 대변 예금 180 +
+	 * 대변 예수금 20) 차변 합(200)이 거래 금액(세후 180)과 다르다. 2번은 모든 거래 종류에 맞는 더 정확한 규칙이다.
+	 * 분개가 하나도 없는 거래(LEFT JOIN 으로 합계 0)도 2번에서 걸린다.
 	 */
 	public int insertUnbalancedTransactions(long closingId, LocalDateTime from, LocalDateTime to) {
 		return jdbcTemplate.update("""
 				INSERT INTO closing_mismatch (id, closing_id, mismatch_type, account_id, transaction_id, expected, actual, detail)
 				SELECT closing_mismatch_seq.NEXTVAL, ?, 'UNBALANCED_TRANSACTION', x.account_id, x.id, x.debit, x.credit,
-				       '거래 금액 ' || x.amount || '원, 차변 합(expected)과 대변 합(actual)이 거래 금액과 같아야 합니다.'
+				       '거래 금액 ' || x.amount || '원(고객 예금 분개 ' || x.customer || '원). 차변 합(expected)과 '
+				       || '대변 합(actual)이 같고, 고객 예금 분개가 거래 금액과 같아야 합니다.'
 				FROM (
 				    SELECT t.id, t.account_id, t.amount,
 				           COALESCE(SUM(CASE e.entry_side WHEN 'DEBIT' THEN e.amount END), 0) AS debit,
-				           COALESCE(SUM(CASE e.entry_side WHEN 'CREDIT' THEN e.amount END), 0) AS credit
+				           COALESCE(SUM(CASE e.entry_side WHEN 'CREDIT' THEN e.amount END), 0) AS credit,
+				           COALESCE(SUM(CASE WHEN e.ledger_account = 'CUSTOMER_DEPOSIT' THEN e.amount END), 0) AS customer
 				    FROM ledger_transaction t LEFT JOIN ledger_entry e ON e.transaction_id = t.id
 				    WHERE t.created_at >= ? AND t.created_at < ?
 				    GROUP BY t.id, t.account_id, t.amount
 				) x
-				WHERE x.debit <> x.credit OR x.debit <> x.amount
+				WHERE x.debit <> x.credit OR x.customer <> x.amount
 				""", closingId, Timestamp.valueOf(from), Timestamp.valueOf(to));
 	}
 

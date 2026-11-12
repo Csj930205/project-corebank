@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "project-corebank API",
-    "description": "계좌 개설/조회, 입금, 출금, 이체, 멱등성, 거래내역, 계좌 해지, 일 마감, 고객 인증, 감사 로그, 횟수 제한, 계좌 검색, 거래 정정 전체 회귀 테스트. 위에서부터 순서대로 실행해야 한다(앞 요청이 만든 계좌 id를 뒤에서 쓴다).",
+    "description": "계좌 개설/조회, 입금, 출금, 이체, 멱등성, 거래내역, 계좌 해지, 일 마감, 고객 인증, 감사 로그, 횟수 제한, 계좌 검색, 거래 정정, 예금 상품·이자 전체 회귀 테스트. 위에서부터 순서대로 실행해야 한다(앞 요청이 만든 계좌 id를 뒤에서 쓴다).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -8271,6 +8271,837 @@
                   "  pm.expect(ok.length).to.eql(1);",
                   "  pm.expect(ok[0].actorUsername).to.eql(pm.collectionVariables.get(\"checkerUser\"));",
                   "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "15. 예금 상품·이자 (관리자)",
+      "description": "상품 등록·판매 중지, 상품을 골라 계좌 개설, 이자 적립(하루치 적수)·월 결산 API. 실제 이자 금액은 날짜를 옮겨야 해서 백엔드 통합 테스트(InterestIntegrationTest)가 확인한다. 여기서는 API 규칙(중복 없음, 끝나지 않은 날·달 거부, 권한)을 본다.",
+      "item": [
+        {
+          "name": "상품 등록 (연 3.65%)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "products"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"{{productName}}\",\"annualRate\":3.65}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"productName\", \"API정기예금-\" + Date.now());",
+                  "// 날짜는 서버와 같은 PC 시각 기준. 어제·오늘·이번 달·지난달",
+                  "const pad = (n) => String(n).padStart(2, \"0\");",
+                  "const fmt = (d) => d.getFullYear() + \"-\" + pad(d.getMonth() + 1) + \"-\" + pad(d.getDate());",
+                  "const now = new Date();",
+                  "const y = new Date(now); y.setDate(now.getDate() - 1);",
+                  "const lm = new Date(now.getFullYear(), now.getMonth() - 1, 1);",
+                  "pm.collectionVariables.set(\"interestToday\", fmt(now));",
+                  "pm.collectionVariables.set(\"interestYesterday\", fmt(y));",
+                  "pm.collectionVariables.set(\"thisMonth\", fmt(now).slice(0, 7));",
+                  "pm.collectionVariables.set(\"lastMonth\", fmt(lm).slice(0, 7));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"판매 중, 금리 3.65\", () => { pm.expect(b.status).to.eql(\"ACTIVE\"); pm.expect(b.annualRate).to.eql(3.65); });",
+                  "pm.collectionVariables.set(\"productId\", b.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "같은 이름 상품 등록",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "products"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"{{productName}}\",\"annualRate\":1.00}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"에러 코드 PRODUCT_NAME_TAKEN\", () => pm.expect(pm.response.json().code).to.eql(\"PRODUCT_NAME_TAKEN\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "금리 소수 셋째 자리 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "products"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"잘못된금리\",\"annualRate\":1.234}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "금리 20% 초과 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "products"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"잘못된금리\",\"annualRate\":20.01}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "판매 중 상품 목록 (고객)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "products"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "const ids = pm.response.json().content.map(p => String(p.id));",
+                  "pm.test(\"기본 상품과 새 상품이 보인다\", () => { pm.expect(ids).to.include(\"1\"); pm.expect(ids).to.include(String(pm.collectionVariables.get(\"productId\"))); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "토큰 없이 상품 목록",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "products"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "새 상품으로 계좌 개설",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"ownerName\":\"이자테스트\",\"productId\":{{productId}}}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"계좌에 상품이 붙는다\", () => { pm.expect(String(b.product.id)).to.eql(String(pm.collectionVariables.get(\"productId\"))); pm.expect(b.product.annualRate).to.eql(3.65); });",
+                  "pm.collectionVariables.set(\"interestAccountId\", b.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "상품 없이 개설하면 기본 상품",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"ownerName\":\"기본상품\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"기본 입출금 통장\", () => pm.expect(pm.response.json().product.id).to.eql(1));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "없는 상품으로 개설",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"ownerName\":\"없는상품\",\"productId\":999999999}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"에러 코드 PRODUCT_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"PRODUCT_NOT_FOUND\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "계좌 이자 현황 (아직 없음)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{interestAccountId}}/interest",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{interestAccountId}}",
+                "interest"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"지급 전 이자 없음, 지급 내역 없음\", () => { pm.expect(b.unpaid).to.eql(null); pm.expect(b.payments).to.eql([]); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "어제 적수 쌓기",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/interest/accruals",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "interest",
+                "accruals"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"businessDate\":\"{{interestYesterday}}\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"영업일과 건수\", () => { const b = pm.response.json(); pm.expect(b.businessDate).to.eql(pm.collectionVariables.get(\"interestYesterday\")); pm.expect(b.accrued).to.be.a(\"number\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "어제 다시 쌓기 (중복 없음)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/interest/accruals",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "interest",
+                "accruals"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"businessDate\":\"{{interestYesterday}}\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"이미 쌓인 날은 0건\", () => pm.expect(pm.response.json().accrued).to.eql(0));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "오늘은 아직 끝나지 않음",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/interest/accruals",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "interest",
+                "accruals"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"businessDate\":\"{{interestToday}}\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"에러 코드 BUSINESS_DATE_NOT_ENDED\", () => pm.expect(pm.response.json().code).to.eql(\"BUSINESS_DATE_NOT_ENDED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "이번 달 결산은 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/interest/settlements",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "interest",
+                "settlements"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"month\":\"{{thisMonth}}\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"에러 코드 MONTH_NOT_ENDED\", () => pm.expect(pm.response.json().code).to.eql(\"MONTH_NOT_ENDED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "지난달 결산",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/interest/settlements",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "interest",
+                "settlements"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"month\":\"{{lastMonth}}\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"결산 결과 형식\", () => { pm.expect(b.month).to.eql(pm.collectionVariables.get(\"lastMonth\")); [\"paid\",\"skipped\",\"failed\",\"totalGross\",\"totalTax\",\"totalNet\"].forEach(k => pm.expect(b[k]).to.be.a(\"number\")); });",
+                  "pm.test(\"세전 = 세금 + 세후\", () => pm.expect(b.totalGross).to.eql(b.totalTax + b.totalNet));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "이자 지급 목록",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/interest/payments?size=5",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "interest",
+                "payments"
+              ],
+              "query": [
+                {
+                  "key": "size",
+                  "value": "5"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"쪽 정보\", () => pm.expect(pm.response.json().content).to.be.an(\"array\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "고객은 결산 불가",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/interest/settlements",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "interest",
+                "settlements"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"month\":\"{{lastMonth}}\"}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "상품 판매 중지",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/products/{{productId}}/discontinuation",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "products",
+                "{{productId}}",
+                "discontinuation"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"판매 중지, 중지 시각\", () => { const b = pm.response.json(); pm.expect(b.status).to.eql(\"DISCONTINUED\"); pm.expect(b.discontinuedAt).to.be.a(\"string\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "판매 중지 상품으로 개설",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"ownerName\":\"중지상품\",\"productId\":{{productId}}}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"에러 코드 PRODUCT_NOT_AVAILABLE\", () => pm.expect(pm.response.json().code).to.eql(\"PRODUCT_NOT_AVAILABLE\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "기존 계좌는 그대로",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{interestAccountId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{interestAccountId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"상품 유지\", () => pm.expect(String(pm.response.json().product.id)).to.eql(String(pm.collectionVariables.get(\"productId\"))));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "기본 상품은 판매 중지 불가",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/products/1/discontinuation",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "products",
+                "1",
+                "discontinuation"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"에러 코드 PRODUCT_NOT_AVAILABLE\", () => pm.expect(pm.response.json().code).to.eql(\"PRODUCT_NOT_AVAILABLE\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "관리자 상품 목록에는 중지 상품도",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "products"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "const p = pm.response.json().content.find(p => String(p.id) === String(pm.collectionVariables.get(\"productId\")));",
+                  "pm.test(\"중지 상품 포함\", () => pm.expect(p.status).to.eql(\"DISCONTINUED\"));"
                 ]
               }
             }

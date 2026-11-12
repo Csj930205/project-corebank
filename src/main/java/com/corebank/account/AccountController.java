@@ -61,12 +61,12 @@ public class AccountController {
 		Actor actor = Actor.from(jwt);
 		Account account;
 		if (actor.isCustomer()) {
-			account = accountService.openForCustomer(actor.customerId());
+			account = accountService.openForCustomer(actor.customerId(), request.productId());
 		} else {
 			if (!request.hasOwnerName()) {
 				throw new OwnerNameRequiredException();
 			}
-			account = accountService.open(request.ownerName());
+			account = accountService.open(request.ownerName(), request.productId());
 		}
 		// 새 계좌 번호는 경로에 없으니 감사 기록에 직접 적는다.
 		AuditContext.accounts(account.getId(), null);

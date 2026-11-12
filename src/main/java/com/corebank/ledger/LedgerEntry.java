@@ -89,4 +89,14 @@ public class LedgerEntry {
 		return new LedgerEntry(reversalTransactionId, ledgerAccount, accountId, opposite, amount);
 	}
 
+	/** 이자비용 발생: 비용이므로 차변에 기록한다. */
+	static LedgerEntry interestExpenseDebit(Long transactionId, long amount) {
+		return new LedgerEntry(transactionId, LedgerAccount.INTEREST_EXPENSE, null, EntrySide.DEBIT, amount);
+	}
+
+	/** 원천징수한 세금: 낼 때까지 은행의 부채이므로 대변에 기록한다. */
+	static LedgerEntry interestTaxCredit(Long transactionId, long amount) {
+		return new LedgerEntry(transactionId, LedgerAccount.INTEREST_TAX_PAYABLE, null, EntrySide.CREDIT, amount);
+	}
+
 }

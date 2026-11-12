@@ -15,12 +15,14 @@ public enum TransactionType {
 	/** 역분개로 잔액이 준 거래. 입금이나 이체 입금(TRANSFER_IN)을 되돌린다. */
 	REVERSAL_OUT,
 	/** 역분개로 잔액이 는 거래. 출금이나 이체 출금(TRANSFER_OUT)을 되돌린다. */
-	REVERSAL_IN;
+	REVERSAL_IN,
+	/** 이자 지급(세후). 월 결산이나 해지 때 생긴다. 은행이 계산해 넣는 거래라 정정 대상이 아니다(이자 지급 기록과 어긋난다). */
+	INTEREST;
 
 	/** 이 거래가 고객 잔액을 늘리는지. 역분개는 이 방향을 반대로 한다. */
 	public boolean increasesBalance() {
 		return switch (this) {
-			case DEPOSIT, TRANSFER_IN, REVERSAL_IN -> true;
+			case DEPOSIT, TRANSFER_IN, REVERSAL_IN, INTEREST -> true;
 			case WITHDRAWAL, TRANSFER_OUT, CLOSURE_PAYOUT, REVERSAL_OUT -> false;
 		};
 	}
@@ -35,7 +37,7 @@ public enum TransactionType {
 	public boolean isCorrectable() {
 		return switch (this) {
 			case DEPOSIT, WITHDRAWAL, TRANSFER_OUT, TRANSFER_IN -> true;
-			case CLOSURE_PAYOUT, REVERSAL_OUT, REVERSAL_IN -> false;
+			case CLOSURE_PAYOUT, REVERSAL_OUT, REVERSAL_IN, INTEREST -> false;
 		};
 	}
 }
