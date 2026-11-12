@@ -1,5 +1,6 @@
 package com.corebank.auth;
 
+import com.corebank.admin.AdminRole;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
@@ -19,7 +20,8 @@ import java.util.UUID;
  * <ul>
  *   <li>iss: 발급자. 검증할 때 우리 서버가 발급한 토큰인지 확인한다.</li>
  *   <li>sub: 로그인 아이디(관리자 또는 고객)</li>
- *   <li>scope: 권한(ADMIN 또는 CUSTOMER). Spring Security 가 "SCOPE_ADMIN" 같은 권한으로 바꿔 접근을 판단한다.</li>
+ *   <li>scope: 누구인가(ADMIN 또는 CUSTOMER). Spring Security 가 "SCOPE_ADMIN" 같은 권한으로 바꿔 접근을 판단한다.</li>
+ *   <li>role: 관리자 토큰에만. 무슨 일을 맡았나(TELLER, APPROVER, OPERATOR). "ROLE_TELLER" 같은 권한이 된다(SecurityConfig).</li>
  *   <li>cid, name: 고객 토큰에만. 고객 번호와 이름. 계좌 소유자 확인은 cid 로 한다.</li>
  *   <li>exp: 만료 시각. 만료 전에 강제로 무효화할 수 없으므로 짧게(30분) 둔다.</li>
  *   <li>jti: 토큰 고유 번호. 나중에 강제 로그아웃(차단 목록)을 만들 때 쓴다.</li>
@@ -40,8 +42,11 @@ public class JwtTokenService {
 		this.clock = clock;
 	}
 
-	public IssuedToken issueAdminToken(String username) {
-		return issue(baseClaims(username).claim("scope", Actor.SCOPE_ADMIN));
+	/** 관리자 토큰. 역할은 로그인할 때 DB 에서 읽은 값이라, 토큰을 고쳐 역할을 올리면 서명이 깨진다. */
+	public IssuedToken issueAdminToken(String username, AdminRole role) {
+		return issue(baseClaims(username)
+				.claim("scope", Actor.SCOPE_ADMIN)
+				.claim(Actor.ROLE_CLAIM, role.name()));
 	}
 
 	/** 고객 토큰. 고객 번호(cid)는 서버가 정한 값이라 위조할 수 없다(서명이 깨진다). */

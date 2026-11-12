@@ -9,6 +9,9 @@ import com.corebank.account.BalanceLimitExceededException;
 import com.corebank.account.InsufficientBalanceException;
 import com.corebank.account.OwnerNameRequiredException;
 import com.corebank.customer.UsernameTakenException;
+import com.corebank.admin.AdminAlreadyDecidedException;
+import com.corebank.admin.AdminSelfApprovalException;
+import com.corebank.admin.AdminUserNotFoundException;
 import com.corebank.auth.InvalidCredentialsException;
 import com.corebank.closing.BusinessDateNotEndedException;
 import com.corebank.closing.ClosingAlreadyRunningException;
@@ -205,6 +208,27 @@ public class ApiExceptionHandler {
 	@ExceptionHandler(SelfApprovalException.class)
 	@ResponseStatus(HttpStatus.FORBIDDEN)
 	public ErrorResponse handleSelfApproval(SelfApprovalException e) {
+		return new ErrorResponse("SELF_APPROVAL_NOT_ALLOWED", e.getMessage());
+	}
+
+	/** 없는 관리자: 404 */
+	@ExceptionHandler(AdminUserNotFoundException.class)
+	@ResponseStatus(HttpStatus.NOT_FOUND)
+	public ErrorResponse handleAdminNotFound(AdminUserNotFoundException e) {
+		return new ErrorResponse("ADMIN_NOT_FOUND", e.getMessage());
+	}
+
+	/** 이미 승인·반려된 관리자 등록: 409 */
+	@ExceptionHandler(AdminAlreadyDecidedException.class)
+	@ResponseStatus(HttpStatus.CONFLICT)
+	public ErrorResponse handleAdminAlreadyDecided(AdminAlreadyDecidedException e) {
+		return new ErrorResponse("ADMIN_ALREADY_DECIDED", e.getMessage());
+	}
+
+	/** 등록을 요청한 관리자가 스스로 결정: 403. 정정의 자기 승인과 같은 코드다. */
+	@ExceptionHandler(AdminSelfApprovalException.class)
+	@ResponseStatus(HttpStatus.FORBIDDEN)
+	public ErrorResponse handleAdminSelfApproval(AdminSelfApprovalException e) {
 		return new ErrorResponse("SELF_APPROVAL_NOT_ALLOWED", e.getMessage());
 	}
 

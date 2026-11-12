@@ -343,7 +343,8 @@ class ClosingIntegrationTest {
 	// ───────────────────────── 관리자 API ─────────────────────────
 
 	private static org.springframework.test.web.servlet.request.RequestPostProcessor admin() {
-		return jwt().jwt(j -> j.subject("test-admin")).authorities(new SimpleGrantedAuthority("SCOPE_ADMIN"));
+		return jwt().jwt(j -> j.subject("test-admin")).authorities(new SimpleGrantedAuthority("SCOPE_ADMIN"),
+				new SimpleGrantedAuthority("ROLE_OPERATOR"));
 	}
 
 	/** 수동 마감: 201, Location, 실행한 관리자, 일계표가 담긴다. 목록과 상세로 다시 조회된다. */

@@ -37,8 +37,10 @@ GRANT SELECT ON transfer_seq TO ${app_user};
 GRANT SELECT, INSERT ON idempotency_record TO ${app_user};
 GRANT SELECT ON idempotency_record_seq TO ${app_user};
 
--- 관리자·고객: 가입(시작 시 관리자 생성)과 조회만. 비밀번호 변경 기능이 생기면 그 열만 UPDATE 를 준다.
+-- 관리자·고객: 가입(시작 시 관리자 생성)과 조회. 비밀번호 변경 기능이 생기면 그 열만 UPDATE 를 준다.
+-- 관리자 등록 승인·반려는 결정 관련 열만 바꾼다. 아이디·역할·요청자는 앱도 못 바꾼다(역할을 몰래 올릴 수 없다).
 GRANT SELECT, INSERT ON admin_user TO ${app_user};
+GRANT UPDATE (status, decided_by, decided_at, version) ON admin_user TO ${app_user};
 GRANT SELECT, INSERT ON customer TO ${app_user};
 GRANT SELECT ON admin_user_seq TO ${app_user};
 GRANT SELECT ON customer_seq TO ${app_user};

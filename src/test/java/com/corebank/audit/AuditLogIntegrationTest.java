@@ -3,6 +3,8 @@ package com.corebank.audit;
 import com.corebank.TestcontainersConfiguration;
 import com.corebank.support.SchemaOwner;
 import com.jayway.jsonpath.JsonPath;
+import com.corebank.admin.AdminRole;
+import com.corebank.auth.JwtTokenService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -38,6 +40,8 @@ class AuditLogIntegrationTest {
 
 	private static final String ADMIN = "test-admin";
 	private static final String ADMIN_PASSWORD = "test-admin-password-1234";
+	/** 돈을 움직이는 요청은 창구 역할이 한다. */
+	private static final String TELLER = "test-teller";
 
 	@Autowired
 	private MockMvc mockMvc;
@@ -47,6 +51,9 @@ class AuditLogIntegrationTest {
 
 	@Autowired
 	private SchemaOwner owner;
+
+	@Autowired
+	private JwtTokenService tokenService;
 
 	// ───────────────────────── 돈이 움직이는 요청 ─────────────────────────
 
@@ -61,7 +68,7 @@ class AuditLogIntegrationTest {
 		Map<String, Object> row = rowOf(result);
 		assertThat(row.get("ACTION")).isEqualTo("DEPOSIT");
 		assertThat(row.get("ACTOR_TYPE")).isEqualTo("ADMIN");
-		assertThat(row.get("ACTOR_USERNAME")).isEqualTo(ADMIN);
+		assertThat(row.get("ACTOR_USERNAME")).isEqualTo(TELLER);
 		assertThat(number(row, "TARGET_ACCOUNT_ID")).isEqualTo(accountId);
 		assertThat(number(row, "STATUS_CODE")).isEqualTo(201);
 		assertThat(row.get("OUTCOME")).isEqualTo("SUCCESS");
@@ -239,7 +246,7 @@ class AuditLogIntegrationTest {
 				.andExpect(jsonPath("$.content[0].action").value("ACCOUNT_VIEW"))
 				.andExpect(jsonPath("$.content[1].action").value("DEPOSIT"))
 				.andExpect(jsonPath("$.content[2].action").value("ACCOUNT_OPEN"))
-				.andExpect(jsonPath("$.content[1].actorUsername").value(ADMIN))
+				.andExpect(jsonPath("$.content[1].actorUsername").value(TELLER))
 				.andReturn();
 
 		assertThat(rowOf(result).get("ACTION")).isEqualTo("AUDIT_LOG_SEARCH");
@@ -256,7 +263,7 @@ class AuditLogIntegrationTest {
 						.param("accountId", String.valueOf(accountId))
 						.param("action", "DEPOSIT")
 						.param("outcome", "SUCCESS")
-						.param("actor", ADMIN)
+						.param("actor", TELLER)
 						.header(HttpHeaders.AUTHORIZATION, bearer(admin)))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.totalElements").value(1));
@@ -324,13 +331,9 @@ class AuditLogIntegrationTest {
 		return "Bearer " + token;
 	}
 
-	private String adminToken() throws Exception {
-		String body = mockMvc.perform(post("/auth/login")
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"username\":\"" + ADMIN + "\",\"password\":\"" + ADMIN_PASSWORD + "\"}"))
-				.andExpect(status().isOk())
-				.andReturn().getResponse().getContentAsString();
-		return JsonPath.read(body, "$.accessToken");
+	/** 창구 토큰. 로그인 과정은 로그인 기록 테스트가 따로 본다. */
+	private String adminToken() {
+		return tokenService.issueAdminToken(TELLER, AdminRole.TELLER).value();
 	}
 
 	private static String signUpBody(String username) {

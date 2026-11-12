@@ -53,6 +53,8 @@ public enum AuditAction {
 	INTEREST_PAYMENT_LIST("GET", "/admin/interest/payments"),
 	ADMIN_USER_LIST("GET", "/admin/admins"),
 	ADMIN_USER_CREATE("POST", "/admin/admins"),
+	ADMIN_USER_APPROVE("POST", "/admin/admins/{id}/approval"),
+	ADMIN_USER_REJECT("POST", "/admin/admins/{id}/rejection"),
 	// 감사 기록을 본 것도 남긴다. 누가 누구의 기록을 찾아봤는지가 다시 감사 대상이다.
 	AUDIT_LOG_SEARCH("GET", "/admin/audit-logs");
 

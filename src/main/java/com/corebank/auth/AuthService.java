@@ -1,5 +1,6 @@
 package com.corebank.auth;
 
+import com.corebank.admin.AdminRole;
 import com.corebank.admin.AdminUser;
 import com.corebank.admin.AdminUserRepository;
 import com.corebank.customer.Customer;
@@ -34,9 +35,11 @@ public class AuthService {
 	}
 
 	/**
-	 * @param name 고객 이름. 관리자는 null
+	 * @param name      고객 이름. 관리자는 null
+	 * @param adminRole 관리자 역할. 고객은 null
 	 */
-	public record LoginResult(JwtTokenService.IssuedToken token, String username, String role, String name) {
+	public record LoginResult(JwtTokenService.IssuedToken token, String username, String role, String name,
+			AdminRole adminRole) {
 	}
 
 	/**
@@ -53,11 +56,13 @@ public class AuthService {
 		Optional<AdminUser> admin = adminUserRepository.findByUsername(username);
 		LoginResult result;
 		if (admin.isPresent()) {
-			if (!passwordEncoder.matches(password, admin.get().getPasswordHash())) {
+			// 승인 전·반려된 계정도 비밀번호를 먼저 비교한다. 상태부터 보면 응답이 빨라 "있는 아이디"임이 드러난다.
+			// 실패 응답도 비밀번호가 틀렸을 때와 똑같이 준다(승인 대기인지 알려 주면 아이디가 있다는 것도 알려 주는 셈이다).
+			if (!passwordEncoder.matches(password, admin.get().getPasswordHash()) || !admin.get().isActive()) {
 				throw new InvalidCredentialsException();
 			}
-			result = new LoginResult(tokenService.issueAdminToken(admin.get().getUsername()),
-					admin.get().getUsername(), Actor.SCOPE_ADMIN, null);
+			result = new LoginResult(tokenService.issueAdminToken(admin.get().getUsername(), admin.get().getRole()),
+					admin.get().getUsername(), Actor.SCOPE_ADMIN, null, admin.get().getRole());
 		} else {
 			result = customerToken(customerService.authenticate(username, password));
 		}
@@ -77,7 +82,7 @@ public class AuthService {
 	public LoginResult customerToken(Customer customer) {
 		JwtTokenService.IssuedToken token =
 				tokenService.issueCustomerToken(customer.getId(), customer.getUsername(), customer.getName());
-		return new LoginResult(token, customer.getUsername(), Actor.SCOPE_CUSTOMER, customer.getName());
+		return new LoginResult(token, customer.getUsername(), Actor.SCOPE_CUSTOMER, customer.getName(), null);
 	}
 
 }

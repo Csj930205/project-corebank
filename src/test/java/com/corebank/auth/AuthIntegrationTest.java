@@ -3,6 +3,7 @@ package com.corebank.auth;
 import com.corebank.TestcontainersConfiguration;
 import com.jayway.jsonpath.JsonPath;
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
+import com.corebank.admin.AdminRole;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -137,7 +138,7 @@ class AuthIntegrationTest {
 	@Test
 	void expiredTokenIsRejected() throws Exception {
 		Clock twoHoursAgo = Clock.fixed(Instant.now().minus(Duration.ofHours(2)), ZoneOffset.UTC);
-		String expired = new JwtTokenService(jwtEncoder, twoHoursAgo).issueAdminToken(USERNAME).value();
+		String expired = new JwtTokenService(jwtEncoder, twoHoursAgo).issueAdminToken(USERNAME, AdminRole.OPERATOR).value();
 
 		mockMvc.perform(get("/admin/accounts").header(HttpHeaders.AUTHORIZATION, bearer(expired)))
 				.andExpect(status().isUnauthorized())

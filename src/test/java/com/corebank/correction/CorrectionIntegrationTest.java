@@ -4,6 +4,7 @@ import com.corebank.TestcontainersConfiguration;
 import com.corebank.account.AccountClosedException;
 import com.corebank.account.AccountService;
 import com.corebank.account.InsufficientBalanceException;
+import com.corebank.admin.AdminRole;
 import com.corebank.auth.JwtTokenService;
 import com.corebank.ledger.LedgerTransaction;
 import com.corebank.ledger.TransactionType;
@@ -342,13 +343,26 @@ class CorrectionIntegrationTest {
 		}
 	}
 
-	/** HTTP: 결정자는 토큰의 아이디다. 같은 토큰으로 승인하면 403, 다른 관리자 토큰이면 200. */
+	/**
+	 * HTTP: 요청은 창구, 결정은 책임자만 한다. 창구 토큰으로 승인하면 역할에서 403 FORBIDDEN 이다(요청자 본인인지 보기도 전).
+	 * 결정자는 토큰의 아이디다.
+	 */
 	@Test
 	void httpFlowUsesTokenSubjectAsDecider() throws Exception {
 		Long account = openWithBalance(10_000);
 		Long tx = accountService.deposit(account, 5_000, newKey()).value().getId();
-		String maker = "Bearer " + tokenService.issueAdminToken(MAKER).value();
-		String checker = "Bearer " + tokenService.issueAdminToken(CHECKER).value();
+		String maker = "Bearer " + tokenService.issueAdminToken(MAKER, AdminRole.TELLER).value();
+		String checker = "Bearer " + tokenService.issueAdminToken(CHECKER, AdminRole.APPROVER).value();
+		String operator = "Bearer " + tokenService.issueAdminToken("ops-admin", AdminRole.OPERATOR).value();
+
+		// 창구가 아니면 정정을 요청할 수 없다.
+		for (String notTeller : new String[] {checker, operator}) {
+			mockMvc.perform(post("/admin/corrections").header(HttpHeaders.AUTHORIZATION, notTeller)
+							.contentType(MediaType.APPLICATION_JSON)
+							.content("{\"transactionId\": " + tx + ", \"reason\": \"금액 오입력\"}"))
+					.andExpect(status().isForbidden())
+					.andExpect(jsonPath("$.code").value("FORBIDDEN"));
+		}
 
 		String body = mockMvc.perform(post("/admin/corrections").header(HttpHeaders.AUTHORIZATION, maker)
 						.contentType(MediaType.APPLICATION_JSON)
@@ -361,9 +375,11 @@ class CorrectionIntegrationTest {
 				.andReturn().getResponse().getContentAsString();
 		long id = ((Number) JsonPath.read(body, "$.id")).longValue();
 
-		mockMvc.perform(post("/admin/corrections/" + id + "/approval").header(HttpHeaders.AUTHORIZATION, maker))
-				.andExpect(status().isForbidden())
-				.andExpect(jsonPath("$.code").value("SELF_APPROVAL_NOT_ALLOWED"));
+		for (String notApprover : new String[] {maker, operator}) {
+			mockMvc.perform(post("/admin/corrections/" + id + "/approval").header(HttpHeaders.AUTHORIZATION, notApprover))
+					.andExpect(status().isForbidden())
+					.andExpect(jsonPath("$.code").value("FORBIDDEN"));
+		}
 		mockMvc.perform(post("/admin/corrections/" + id + "/rejection").header(HttpHeaders.AUTHORIZATION, checker)
 						.contentType(MediaType.APPLICATION_JSON).content("{\"comment\": \" \"}"))
 				.andExpect(status().isBadRequest());

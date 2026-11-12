@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import com.corebank.admin.AdminRole;
 import com.corebank.audit.AuditContext;
 import com.corebank.customer.CustomerService;
 import jakarta.validation.constraints.Pattern;
@@ -61,18 +62,20 @@ public class AuthController {
 	 * @param expiresIn   남은 유효 시간(초)
 	 * @param role        ADMIN 또는 CUSTOMER
 	 * @param name        고객 이름. 관리자는 null
+	 * @param adminRole   관리자 역할(TELLER, APPROVER, OPERATOR). 고객은 null. 화면이 메뉴와 버튼을 고르는 데 쓴다.
 	 */
 	public record TokenResponse(String accessToken, String tokenType, long expiresIn, Instant expiresAt, String username,
-			String role, String name) {
+			String role, String name, AdminRole adminRole) {
 
 		static TokenResponse of(AuthService.LoginResult result) {
 			return new TokenResponse(result.token().value(), "Bearer", JwtTokenService.TTL.toSeconds(),
-					result.token().expiresAt(), result.username(), result.role(), result.name());
+					result.token().expiresAt(), result.username(), result.role(), result.name(), result.adminRole());
 		}
 	}
 
-	/** @param customerId, name 고객 토큰일 때만 값이 있다 */
-	public record MeResponse(String username, String role, Long customerId, String name, Instant expiresAt) {
+	/** @param customerId, name 고객 토큰일 때만 값이 있다. adminRole 은 관리자 토큰일 때만 */
+	public record MeResponse(String username, String role, Long customerId, String name, AdminRole adminRole,
+			Instant expiresAt) {
 	}
 
 	/**
@@ -106,7 +109,7 @@ public class AuthController {
 	public MeResponse me(@AuthenticationPrincipal Jwt jwt) {
 		Actor actor = Actor.from(jwt);
 		return new MeResponse(actor.username(), actor.role().name(), actor.customerId(),
-				jwt.getClaimAsString("name"), jwt.getExpiresAt());
+				jwt.getClaimAsString("name"), actor.adminRole(), jwt.getExpiresAt());
 	}
 
 }

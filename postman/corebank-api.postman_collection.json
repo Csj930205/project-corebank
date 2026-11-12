@@ -13,10 +13,10 @@
   "item": [
     {
       "name": "0. 로그인",
-      "description": "계좌 API 는 로그인이 필요하다. 여기서 받은 관리자 토큰을 컬렉션 전체가 쓴다(창구 직원 역할). 실행: postman collection run ... --env-var adminUsername=... --env-var adminPassword=... (비밀번호는 파일에 저장하지 않는다)",
+      "description": "관리자 역할이 셋이다: 창구(TELLER) 돈을 움직임, 책임자(APPROVER) 승인, 운영(OPERATOR) 마감·이자·상품·관리자 등록 요청. 서버 설정으로 만든 운영자와 책임자로 로그인하고, 운영자가 창구 등록을 요청하면 책임자가 승인한다. 그 창구 토큰(adminToken)을 컬렉션 기본값으로 쓰고, 운영·승인 요청만 operatorToken / approverToken 을 붙인다. 실행: postman collection run ... --env-var adminUsername=... --env-var adminPassword=... --env-var approverUsername=... --env-var approverPassword=... (비밀번호는 파일에 저장하지 않는다)",
       "item": [
         {
-          "name": "관리자 로그인",
+          "name": "운영자 로그인",
           "request": {
             "method": "POST",
             "header": [
@@ -50,7 +50,495 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"상태 코드 200 (adminUsername / adminPassword 를 --env-var 로 넘겼는지 확인)\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"역할은 운영자(OPERATOR)\", () => pm.expect(pm.response.json().adminRole).to.eql(\"OPERATOR\"));",
+                  "pm.collectionVariables.set(\"operatorToken\", pm.response.json().accessToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "책임자 로그인",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"username\":\"{{approverUsername}}\",\"password\":\"{{approverPassword}}\"}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200 (approverUsername / approverPassword 를 --env-var 로 넘겼는지 확인)\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"역할은 책임자(APPROVER)\", () => pm.expect(pm.response.json().adminRole).to.eql(\"APPROVER\"));",
+                  "pm.collectionVariables.set(\"approverToken\", pm.response.json().accessToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "창구 등록 요청 (운영자)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/admins",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "admins"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"username\":\"{{tellerUser}}\",\"password\":\"{{tellerPassword}}\",\"role\":\"TELLER\"}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 매번 새 창구 관리자. 비밀번호도 실행마다 만들어 파일에 남지 않게 한다.",
+                  "pm.collectionVariables.set(\"tellerUser\", \"teller_\" + Date.now());",
+                  "pm.collectionVariables.set(\"tellerPassword\", \"pw-\" + pm.variables.replaceIn(\"{{$guid}}\"));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"승인 대기(PENDING), 요청자는 운영자, 비밀번호 해시는 없다\", () => { pm.expect(b.status).to.eql(\"PENDING\"); pm.expect(b.role).to.eql(\"TELLER\"); pm.expect(b.requestedBy).to.eql(pm.variables.get(\"adminUsername\")); pm.expect(b).to.not.have.property(\"passwordHash\"); });",
+                  "pm.collectionVariables.set(\"tellerId\", b.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "승인 전에는 로그인 불가",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"username\":\"{{tellerUser}}\",\"password\":\"{{tellerPassword}}\"}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 401 (비밀번호가 틀렸을 때와 같은 응답)\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"에러 코드 INVALID_CREDENTIALS\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_CREDENTIALS\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "운영자는 등록을 승인할 수 없다",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/admins/{{tellerId}}/approval",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "admins",
+                "{{tellerId}}",
+                "approval"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 403\", () => pm.response.to.have.status(403));",
+                  "pm.test(\"에러 코드 FORBIDDEN\", () => pm.expect(pm.response.json().code).to.eql(\"FORBIDDEN\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "승인 대기 목록에 보인다",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/admins?status=PENDING",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "admins"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "PENDING"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{approverToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"방금 요청한 창구가 있다\", () => pm.expect(pm.response.json().content.map(a => a.username)).to.include(pm.collectionVariables.get(\"tellerUser\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "창구 등록 승인 (책임자)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/admins/{{tellerId}}/approval",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "admins",
+                "{{tellerId}}",
+                "approval"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{approverToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"ACTIVE, 승인자는 책임자\", () => { pm.expect(b.status).to.eql(\"ACTIVE\"); pm.expect(b.decidedBy).to.eql(pm.variables.get(\"approverUsername\")); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "다시 승인",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/admins/{{tellerId}}/approval",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "admins",
+                "{{tellerId}}",
+                "approval"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{approverToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"에러 코드 ADMIN_ALREADY_DECIDED\", () => pm.expect(pm.response.json().code).to.eql(\"ADMIN_ALREADY_DECIDED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "창구 로그인",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"username\":\"{{tellerUser}}\",\"password\":\"{{tellerPassword}}\"}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"역할은 창구(TELLER)\", () => pm.expect(pm.response.json().adminRole).to.eql(\"TELLER\"));",
+                  "// 이 컬렉션의 기본 토큰(adminToken)은 창구다. 운영·승인 요청만 운영자·책임자 토큰을 따로 붙인다.",
                   "pm.collectionVariables.set(\"adminToken\", pm.response.json().accessToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "운영자는 계좌를 열 수 없다",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"ownerName\":\"홍길동\"}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 403 (돈을 움직이는 일은 창구만)\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "책임자는 입금할 수 없다",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/1/deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "1",
+                "deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":1000}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{approverToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "창구는 일 마감을 할 수 없다",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/closings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "closings"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"businessDate\":\"2000-01-01\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 403\", () => pm.response.to.have.status(403));"
                 ]
               }
             }
@@ -4722,6 +5210,16 @@
             "body": {
               "mode": "raw",
               "raw": "{\"businessDate\":\"{{closeDate}}\"}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
@@ -4834,6 +5332,16 @@
             "body": {
               "mode": "raw",
               "raw": "{\"businessDate\":\"{{todayDate}}\"}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
@@ -4872,6 +5380,16 @@
             "body": {
               "mode": "raw",
               "raw": "{}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
@@ -6168,7 +6686,7 @@
                   "  const o = b.content[1];",
                   "  pm.expect(o.requestId).to.eql(pm.collectionVariables.get(\"auditOpenRequestId\"));",
                   "  pm.expect(o.actorType).to.eql(\"ADMIN\");",
-                  "  pm.expect(o.actorUsername).to.eql(pm.variables.get(\"adminUsername\"));",
+                  "  pm.expect(o.actorUsername).to.eql(pm.collectionVariables.get(\"tellerUser\"));",
                   "  pm.expect(o.outcome).to.eql(\"SUCCESS\");",
                   "});",
                   "pm.test(\"요청 본문은 남기지 않는다(경로만)\", () => pm.expect(b.content[0].path).to.eql(\"/accounts/\" + pm.collectionVariables.get(\"auditAccountId\") + \"/withdrawals\"));"
@@ -6226,7 +6744,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/admin/audit-logs?action=AUDIT_LOG_SEARCH&actor={{adminUsername}}&size=1",
+              "raw": "{{baseUrl}}/admin/audit-logs?action=AUDIT_LOG_SEARCH&actor={{tellerUser}}&size=1",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -6241,7 +6759,7 @@
                 },
                 {
                   "key": "actor",
-                  "value": "{{adminUsername}}"
+                  "value": "{{tellerUser}}"
                 },
                 {
                   "key": "size",
@@ -6649,6 +7167,16 @@
                 "login-locks",
                 "{{lockUser}}",
                 "unlock"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
               ]
             }
           },
@@ -7322,56 +7850,6 @@
           ]
         },
         {
-          "name": "두 번째 관리자 등록 (승인자)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/admin/admins",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "admin",
-                "admins"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\"username\":\"{{checkerUser}}\",\"password\":\"{{checkerPassword}}\"}"
-            }
-          },
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// 매번 새 관리자. 비밀번호도 실행마다 만들어 파일에 남지 않게 한다.",
-                  "pm.collectionVariables.set(\"checkerUser\", \"checker_\" + Date.now());",
-                  "pm.collectionVariables.set(\"checkerPassword\", \"pw-\" + pm.variables.replaceIn(\"{{$guid}}\"));"
-                ]
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
-                  "const b = pm.response.json();",
-                  "pm.test(\"아이디만 돌려주고 비밀번호 해시는 없다\", () => { pm.expect(b.username).to.eql(pm.collectionVariables.get(\"checkerUser\")); pm.expect(b).to.not.have.property(\"passwordHash\"); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
           "name": "이미 쓰는 아이디로 관리자 등록",
           "request": {
             "method": "POST",
@@ -7393,7 +7871,17 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"username\":\"{{checkerUser}}\",\"password\":\"another-password\"}"
+              "raw": "{\"username\":\"{{tellerUser}}\",\"password\":\"another-password\",\"role\":\"TELLER\"}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
@@ -7410,49 +7898,7 @@
           ]
         },
         {
-          "name": "두 번째 관리자 로그인",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/auth/login",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "auth",
-                "login"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\"username\":\"{{checkerUser}}\",\"password\":\"{{checkerPassword}}\"}"
-            },
-            "auth": {
-              "type": "noauth"
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"관리자 토큰\", () => pm.expect(pm.response.json().role).to.eql(\"ADMIN\"));",
-                  "pm.collectionVariables.set(\"checkerToken\", pm.response.json().accessToken);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "정정 요청 (첫 관리자)",
+          "name": "정정 요청 (창구)",
           "request": {
             "method": "POST",
             "header": [
@@ -7486,7 +7932,7 @@
                   "const b = pm.response.json();",
                   "pm.test(\"승인 대기, 대상 거래 정보\", () => {",
                   "  pm.expect(b.status).to.eql(\"REQUESTED\");",
-                  "  pm.expect(b.requestedBy).to.eql(pm.variables.get(\"adminUsername\"));",
+                  "  pm.expect(b.requestedBy).to.eql(pm.collectionVariables.get(\"tellerUser\"));",
                   "  pm.expect(b.transactionType).to.eql(\"DEPOSIT\");",
                   "  pm.expect(b.amount).to.eql(90000);",
                   "  pm.expect(b.reversalTransactionIds).to.eql([]);",
@@ -7566,7 +8012,7 @@
           ]
         },
         {
-          "name": "요청한 관리자가 승인",
+          "name": "창구는 승인할 수 없다",
           "request": {
             "method": "POST",
             "header": [],
@@ -7589,8 +8035,9 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "// 요청은 창구, 승인은 책임자만 한다. 요청자 본인인지 보기도 전에 역할에서 막힌다.",
                   "pm.test(\"상태 코드 403\", () => pm.response.to.have.status(403));",
-                  "pm.test(\"에러 코드 SELF_APPROVAL_NOT_ALLOWED\", () => pm.expect(pm.response.json().code).to.eql(\"SELF_APPROVAL_NOT_ALLOWED\"));"
+                  "pm.test(\"에러 코드 FORBIDDEN\", () => pm.expect(pm.response.json().code).to.eql(\"FORBIDDEN\"));"
                 ]
               }
             }
@@ -7627,7 +8074,7 @@
               "bearer": [
                 {
                   "key": "token",
-                  "value": "{{checkerToken}}",
+                  "value": "{{approverToken}}",
                   "type": "string"
                 }
               ]
@@ -7647,7 +8094,7 @@
           ]
         },
         {
-          "name": "다른 관리자가 승인",
+          "name": "책임자가 승인",
           "request": {
             "method": "POST",
             "header": [
@@ -7677,7 +8124,7 @@
               "bearer": [
                 {
                   "key": "token",
-                  "value": "{{checkerToken}}",
+                  "value": "{{approverToken}}",
                   "type": "string"
                 }
               ]
@@ -7693,7 +8140,7 @@
                   "const b = pm.response.json();",
                   "pm.test(\"승인, 역분개 1건\", () => {",
                   "  pm.expect(b.status).to.eql(\"APPROVED\");",
-                  "  pm.expect(b.decidedBy).to.eql(pm.collectionVariables.get(\"checkerUser\"));",
+                  "  pm.expect(b.decidedBy).to.eql(pm.variables.get(\"approverUsername\"));",
                   "  pm.expect(b.decisionComment).to.eql(\"고객 확인함\");",
                   "  pm.expect(b.reversalTransactionIds.length).to.eql(1);",
                   "});",
@@ -7725,7 +8172,7 @@
               "bearer": [
                 {
                   "key": "token",
-                  "value": "{{checkerToken}}",
+                  "value": "{{approverToken}}",
                   "type": "string"
                 }
               ]
@@ -8093,7 +8540,7 @@
           ]
         },
         {
-          "name": "다른 관리자가 반려",
+          "name": "책임자가 반려",
           "request": {
             "method": "POST",
             "header": [
@@ -8123,7 +8570,7 @@
               "bearer": [
                 {
                   "key": "token",
-                  "value": "{{checkerToken}}",
+                  "value": "{{approverToken}}",
                   "type": "string"
                 }
               ]
@@ -8269,7 +8716,7 @@
                   "pm.test(\"성공 1건, 승인자 기록\", () => {",
                   "  const ok = b.content.filter(l => l.outcome === \"SUCCESS\");",
                   "  pm.expect(ok.length).to.eql(1);",
-                  "  pm.expect(ok[0].actorUsername).to.eql(pm.collectionVariables.get(\"checkerUser\"));",
+                  "  pm.expect(ok[0].actorUsername).to.eql(pm.variables.get(\"approverUsername\"));",
                   "});"
                 ]
               }
@@ -8305,6 +8752,16 @@
             "body": {
               "mode": "raw",
               "raw": "{\"name\":\"{{productName}}\",\"annualRate\":3.65}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
@@ -8364,6 +8821,16 @@
             "body": {
               "mode": "raw",
               "raw": "{\"name\":\"{{productName}}\",\"annualRate\":1.00}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
@@ -8402,6 +8869,16 @@
             "body": {
               "mode": "raw",
               "raw": "{\"name\":\"잘못된금리\",\"annualRate\":1.234}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
@@ -8440,6 +8917,16 @@
             "body": {
               "mode": "raw",
               "raw": "{\"name\":\"잘못된금리\",\"annualRate\":20.01}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
@@ -8692,6 +9179,16 @@
             "body": {
               "mode": "raw",
               "raw": "{\"businessDate\":\"{{interestYesterday}}\"}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
@@ -8731,6 +9228,16 @@
             "body": {
               "mode": "raw",
               "raw": "{\"businessDate\":\"{{interestYesterday}}\"}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
@@ -8770,6 +9277,16 @@
             "body": {
               "mode": "raw",
               "raw": "{\"businessDate\":\"{{interestToday}}\"}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
@@ -8809,6 +9326,16 @@
             "body": {
               "mode": "raw",
               "raw": "{\"month\":\"{{thisMonth}}\"}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
@@ -8848,6 +9375,16 @@
             "body": {
               "mode": "raw",
               "raw": "{\"month\":\"{{lastMonth}}\"}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
@@ -8965,6 +9502,16 @@
                 "{{productId}}",
                 "discontinuation"
               ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
@@ -9061,6 +9608,16 @@
                 "products",
                 "1",
                 "discontinuation"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
               ]
             }
           },

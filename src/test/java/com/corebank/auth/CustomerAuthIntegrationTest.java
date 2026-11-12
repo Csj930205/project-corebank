@@ -2,6 +2,7 @@ package com.corebank.auth;
 
 import com.corebank.TestcontainersConfiguration;
 import com.jayway.jsonpath.JsonPath;
+import com.corebank.admin.AdminRole;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -34,6 +35,9 @@ class CustomerAuthIntegrationTest {
 	private static final String PASSWORD = "customer-password-1";
 
 	@Autowired
+	private JwtTokenService tokenService;
+
+	@Autowired
 	private MockMvc mockMvc;
 
 	@Autowired
@@ -61,13 +65,9 @@ class CustomerAuthIntegrationTest {
 		return JsonPath.read(body, "$.accessToken");
 	}
 
-	private String adminToken() throws Exception {
-		String body = mockMvc.perform(post("/auth/login")
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"username\":\"test-admin\",\"password\":\"test-admin-password-1234\"}"))
-				.andExpect(status().isOk())
-				.andReturn().getResponse().getContentAsString();
-		return JsonPath.read(body, "$.accessToken");
+	/** 창구 관리자 토큰. 고객 계좌를 대신 다루는 것은 창구 역할이다. */
+	private String adminToken() {
+		return tokenService.issueAdminToken("test-teller", AdminRole.TELLER).value();
 	}
 
 	/** 토큰 주인으로 계좌를 열고 id 를 돌려준다. */
@@ -178,8 +178,8 @@ class CustomerAuthIntegrationTest {
 	@Test
 	void adminUsernameCannotBeUsedForSignUp() throws Exception {
 		String adminName = username();
-		jdbcTemplate.update("INSERT INTO admin_user (id, username, password_hash, created_at) "
-				+ "VALUES (admin_user_seq.NEXTVAL, ?, 'not-a-real-hash', SYSTIMESTAMP)", adminName);
+		jdbcTemplate.update("INSERT INTO admin_user (id, username, password_hash, created_at, role, status) "
+				+ "VALUES (admin_user_seq.NEXTVAL, ?, 'not-a-real-hash', SYSTIMESTAMP, 'TELLER', 'ACTIVE')", adminName);
 
 		signUp(adminName, PASSWORD, "흉내").andExpect(status().isConflict())
 				.andExpect(jsonPath("$.code").value("USERNAME_TAKEN"));

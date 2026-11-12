@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Csj930205/project-corebank/actions/workflows/ci.yml/badge.svg)](https://github.com/Csj930205/project-corebank/actions/workflows/ci.yml)
 
-계좌 개설, 입출금, 이체, 해지와 일 마감 대사 배치를 처리하고, 감사 로그·원장 불변성·로그인 잠금 같은 보안 장치를 갖춘 코어뱅킹 서버다. 고객은 본인 계좌만, 관리자(창구 직원)는 모든 계좌를 다룬다. 금융권(은행·카드·증권) 지원용 포트폴리오로 만들고 있다.
+계좌 개설, 입출금, 이체, 해지와 일 마감 대사 배치를 처리하고, 감사 로그·원장 불변성·로그인 잠금 같은 보안 장치를 갖춘 코어뱅킹 서버다. 고객은 본인 계좌만 다루고, 관리자는 모든 계좌를 보되 역할(창구·책임자·운영)마다 바꿀 수 있는 일이 나뉜다. 금융권(은행·카드·증권) 지원용 포트폴리오로 만들고 있다.
 
 기능 수보다 **"어떤 상황에서도 돈이 틀어지지 않는다"** 를 증명하는 데 집중한다. 모든 거래를 복식부기 원장에 남기고, 동시 요청과 재전송에도 잔액이 맞는지 실제 Oracle 위에서 테스트한다.
 
@@ -31,7 +31,8 @@
 | 횟수 제한 | 완료 | 로그인 5번 연속 실패 시 15분 잠금(관리자 해제 가능), 수취인 조회 고객당 시간당 30번 |
 | DB 계정 분리 | 완료 | 테이블 소유자(마이그레이션 전용)와 앱 계정 분리. 앱 계정은 필요한 테이블 권한만, DDL 불가 |
 | 예금 상품·이자 결산 | 완료 | 상품(연이율)별 계좌 개설. 매일 마감 잔액을 쌓아(적수) 매달 1일 지난달 이자 지급, 이자소득세 15.4% 원천징수, 해지 시 이자 함께 지급 |
-| 거래 정정(역분개)·승인 | 완료 | 잘못된 거래를 원장 수정 없이 반대 거래로 되돌림. 한 관리자가 요청하고 다른 관리자가 승인해야 반영(4-eyes), 동시 결정은 낙관적 락으로 하나만 성공 |
+| 거래 정정(역분개)·승인 | 완료 | 잘못된 거래를 원장 수정 없이 반대 거래로 되돌림. 창구가 요청하고 책임자가 승인해야 반영(4-eyes), 동시 결정은 낙관적 락으로 하나만 성공 |
+| 관리자 역할 분리 | 완료 | 창구(TELLER)·책임자(APPROVER)·운영(OPERATOR) 중 하나만 가진다. 변경 API 마다 맡은 역할만 허용(나머지 403), 관리자 등록도 운영자 요청 + 책임자 승인 |
 | 마이그레이션 분리 | 완료 | 마이그레이션은 별도 프로그램(`./gradlew migrate`)이 소유자로 실행. 서버는 DB 버전 확인만 하고 소유자 비밀번호가 필요 없다 |
 
 ## 기술 스택
@@ -73,7 +74,7 @@ docker compose up -d --wait
 docker compose exec oracle bash /container-entrypoint-initdb.d/01-create-app-user.sh
 ```
 
-화면은 `project-corebank-front` 폴더에서 `npm install && npm run dev` 로 실행한다. 개발 서버가 `/api` 요청을 8080 으로 넘기므로 CORS 설정이 필요 없다. 화면의 로그인은 하나다. `.env` 의 관리자 계정으로 들어가면 운영 콘솔, 가입한 고객 계정으로 들어가면 내 계좌 화면이 열린다.
+화면은 `project-corebank-front` 폴더에서 `npm install && npm run dev` 로 실행한다. 개발 서버가 `/api` 요청을 8080 으로 넘기므로 CORS 설정이 필요 없다. 화면의 로그인은 하나다. `.env` 의 관리자 계정으로 들어가면 운영 콘솔, 가입한 고객 계정으로 들어가면 내 계좌 화면이 열린다. 운영 콘솔에서 계좌를 열고 입출금하려면 창구 계정이 필요하다. 운영자(`ADMIN_USERNAME`)로 로그인해 관리자 계정 화면에서 창구 등록을 요청하고, 책임자(`APPROVER_USERNAME`)로 로그인해 승인한 뒤 그 창구 계정으로 로그인한다.
 
 ### 처음 써 보기
 
@@ -96,7 +97,7 @@ curl -s -X POST localhost:8080/accounts/{계좌 id}/deposits -H "Authorization: 
 curl -s localhost:8080/accounts -H "Authorization: Bearer $TOKEN"
 ```
 
-관리자 토큰도 같은 `POST /auth/login` 에 `.env` 의 `ADMIN_USERNAME` / `ADMIN_PASSWORD` 를 보내 받는다. 응답의 `role` 이 `ADMIN` 이면 관리자, `CUSTOMER` 면 고객 토큰이다.
+관리자 토큰도 같은 `POST /auth/login` 에 `.env` 의 `ADMIN_USERNAME` / `ADMIN_PASSWORD` 를 보내 받는다. 응답의 `role` 이 `ADMIN` 이면 관리자, `CUSTOMER` 면 고객 토큰이고, 관리자는 `adminRole`(`TELLER`·`APPROVER`·`OPERATOR`)로 역할을 알려 준다.
 
 | `.env` 항목 | 설명 |
 |---|---|
@@ -105,7 +106,8 @@ curl -s localhost:8080/accounts -H "Authorization: Bearer $TOKEN"
 | `DB_APP_USERNAME`, `DB_APP_PASSWORD` | 서버가 쓰는 앱 계정. 소유자가 준 권한만 있다 |
 | `DB_URL` | (선택) DB 접속 주소. 기본값은 compose 의 `jdbc:oracle:thin:@//localhost:1521/FREEPDB1` |
 | `JWT_SECRET` | JWT 서명 키, 32바이트 이상 (`openssl rand -base64 48`) |
-| `ADMIN_USERNAME`, `ADMIN_PASSWORD` | 첫 관리자 계정. 서버가 처음 시작할 때 한 번만 만든다 (비밀번호 12자 이상) |
+| `ADMIN_USERNAME`, `ADMIN_PASSWORD` | 첫 운영자(OPERATOR). 서버가 처음 시작할 때 한 번만 만든다 (비밀번호 12자 이상) |
+| `APPROVER_USERNAME`, `APPROVER_PASSWORD` | 첫 책임자(APPROVER). 운영자와 아이디가 달라야 한다. 창구(TELLER)는 이 둘이 화면에서 등록 요청·승인해 만든다 |
 
 횟수 제한(로그인 잠금 횟수·시간, 수취인 조회 한도)과 자동 마감 시각은 `src/main/resources/application.properties` 에 기본값이 있다.
 
@@ -136,7 +138,15 @@ docker compose --profile deploy down   # 배포한 서버 내리기 (DB 는 그�
 
 ## API
 
-로그인과 가입을 뺀 모든 API 는 `Authorization: Bearer <토큰>` 이 필요하다. 계좌 API 는 **고객은 본인 계좌만, 관리자는 모든 계좌**를 다룬다(관리자 = 창구 직원 역할).
+로그인과 가입을 뺀 모든 API 는 `Authorization: Bearer <토큰>` 이 필요하다. 계좌 API 는 **고객은 본인 계좌만, 관리자는 모든 계좌**를 다룬다.
+
+관리자는 역할이 하나다. **조회(GET)는 모든 관리자**가 하고, 변경은 아래 역할만 한다(다른 역할은 403 `FORBIDDEN`).
+
+| 역할 | 할 수 있는 변경 |
+|---|---|
+| 창구 `TELLER` | 계좌 개설·입금·출금·이체·해지, 거래 정정 요청 |
+| 책임자 `APPROVER` | 거래 정정 승인·반려, 관리자 등록 승인·반려 |
+| 운영 `OPERATOR` | 일 마감, 이자 적립·결산, 상품 등록·판매 중지, 로그인 잠금 해제, 관리자 등록 요청 |
 
 돈이 움직이는 요청(★)은 `Idempotency-Key` 헤더가 필수다. 새 요청마다 새 UUID 를 만들고, 응답을 못 받아 다시 보낼 때만 같은 키를 쓴다.
 
@@ -160,23 +170,25 @@ docker compose --profile deploy down   # 배포한 서버 내리기 (DB 는 그�
 | GET | `/admin/accounts?query=&status=&openedFrom=&openedTo=&minBalance=&maxBalance=&page=&size=` | 계좌 검색 (관리자). 검색어는 계좌번호 앞자리 또는 이름 일부. 개설일(`YYYY-MM-DD`)·잔액(원) 범위는 양 끝 포함, 시작이 끝보다 크면 빈 목록 | 200 |
 | GET | `/admin/summary` | 계좌·잔액·거래 수 요약과 원장 점검 결과 (관리자) | 200 |
 | GET | `/admin/login-locks` | 지금 잠긴 아이디(실패 수, 풀리는 시각), 곧 풀리는 순서. 가입하지 않은 아이디도 나온다 (관리자) | 200 |
-| POST | `/admin/login-locks/{username}/unlock` | 로그인 잠금 해제. 창구에서 본인 확인 뒤 잠금 시간을 기다리지 않고 푼다 (관리자) | 204 |
-| POST | `/admin/closings` | 일 마감 수동 실행 `{businessDate}`. 끝날 때까지 기다렸다가 결과 반환 (관리자) | 201 + `Location` |
+| POST | `/admin/login-locks/{username}/unlock` | 로그인 잠금 해제. 창구에서 본인 확인 뒤 잠금 시간을 기다리지 않고 푼다 (운영) | 204 |
+| POST | `/admin/closings` | 일 마감 수동 실행 `{businessDate}`. 끝날 때까지 기다렸다가 결과 반환 (운영) | 201 + `Location` |
 | GET | `/admin/closings?page=&size=` | 마감 실행 목록, 최신순 (관리자) | 200 |
 | GET | `/admin/closings/{id}` | 마감 상세: 일계표, 불일치 내역 (관리자) | 200 |
 | GET | `/admin/products` | 판매 중지 포함 전체 상품 (관리자) | 200 |
-| POST | `/admin/products` | 상품 등록 `{name, annualRate}`. 연이율(%) 0~20, 소수 둘째 자리까지 (관리자) | 201 |
-| POST | `/admin/products/{id}/discontinuation` | 판매 중지. 이미 연 계좌는 그 금리로 계속 이자가 붙는다. 기본 상품은 409 (관리자) | 200 |
-| POST | `/admin/interest/accruals` | 하루치 적수 쌓기 `{businessDate}` (평소 매일 00:20 자동). 다시 실행해도 두 번 쌓이지 않는다 (관리자) | 200 |
-| POST | `/admin/interest/settlements` | 월 결산 `{month: "2026-11"}` (평소 매달 1일 00:30 자동). 다시 실행하면 못 받은 계좌만 지급 (관리자) | 200 |
+| POST | `/admin/products` | 상품 등록 `{name, annualRate}`. 연이율(%) 0~20, 소수 둘째 자리까지 (운영) | 201 |
+| POST | `/admin/products/{id}/discontinuation` | 판매 중지. 이미 연 계좌는 그 금리로 계속 이자가 붙는다. 기본 상품은 409 (운영) | 200 |
+| POST | `/admin/interest/accruals` | 하루치 적수 쌓기 `{businessDate}` (평소 매일 00:20 자동). 다시 실행해도 두 번 쌓이지 않는다 (운영) | 200 |
+| POST | `/admin/interest/settlements` | 월 결산 `{month: "2026-11"}` (평소 매달 1일 00:30 자동). 다시 실행하면 못 받은 계좌만 지급 (운영) | 200 |
 | GET | `/admin/interest/payments?page=&size=` | 최근 이자 지급 (관리자) | 200 |
-| POST | `/admin/corrections` | 거래 정정 요청 `{transactionId, reason}`. 원장은 아직 그대로다. 이체는 어느 쪽 거래로 요청해도 이체 전체를 되돌린다 (관리자) | 201 + `Location` |
+| POST | `/admin/corrections` | 거래 정정 요청 `{transactionId, reason}`. 원장은 아직 그대로다. 이체는 어느 쪽 거래로 요청해도 이체 전체를 되돌린다 (창구) | 201 + `Location` |
 | GET | `/admin/corrections?status=&page=&size=` | 정정 요청 목록, 최신순. `status` 는 `REQUESTED`·`APPROVED`·`REJECTED` (관리자) | 200 |
 | GET | `/admin/corrections/{id}` | 정정 요청 상세: 대상 거래, 계좌, 결정, 역분개 거래 id (관리자) | 200 |
-| POST | `/admin/corrections/{id}/approval` | 승인 `{comment?}`. 역분개를 기록하고 잔액을 되돌린다. 요청한 관리자는 403 (관리자) | 200 |
-| POST | `/admin/corrections/{id}/rejection` | 반려 `{comment}` (사유 필수). 원장은 그대로 (관리자) | 200 |
-| GET | `/admin/admins` | 관리자 목록 (관리자) | 200 |
-| POST | `/admin/admins` | 관리자 등록 `{username, password}`. 비밀번호 12자 이상, 고객 아이디와도 겹치면 안 된다 (관리자) | 201 |
+| POST | `/admin/corrections/{id}/approval` | 승인 `{comment?}`. 역분개를 기록하고 잔액을 되돌린다. 요청한 관리자는 403 (책임자) | 200 |
+| POST | `/admin/corrections/{id}/rejection` | 반려 `{comment}` (사유 필수). 원장은 그대로 (책임자) | 200 |
+| GET | `/admin/admins?status=` | 관리자 목록(역할, 상태, 요청·승인자). `status` 는 `PENDING`·`ACTIVE`·`REJECTED` (관리자) | 200 |
+| POST | `/admin/admins` | 관리자 등록 요청 `{username, password, role}` (운영). 비밀번호 12자 이상, 고객 아이디와도 겹치면 안 된다. 승인 전(`PENDING`)에는 로그인할 수 없다 | 201 |
+| POST | `/admin/admins/{id}/approval` | 관리자 등록 승인 (책임자). 이미 결정됐으면 409 `ADMIN_ALREADY_DECIDED` | 200 |
+| POST | `/admin/admins/{id}/rejection` | 관리자 등록 반려 (책임자). 아이디는 계속 쓰는 중으로 남는다 | 200 |
 | GET | `/admin/audit-logs?actor=&action=&outcome=&accountId=&from=&to=&page=&size=` | 감사 기록, 최신순. 날짜는 `YYYY-MM-DD`, 양 끝 포함 (관리자) | 200 |
 
 금액은 원 단위 정수다. `1.5` 같은 소수나 문자열은 잘라 받지 않고 거부한다.
@@ -195,7 +207,8 @@ docker compose --profile deploy down   # 배포한 서버 내리기 (DB 는 그�
 | 401 | `INVALID_CREDENTIALS` | 로그인 실패 |
 | 401 | `UNAUTHORIZED` | 토큰이 없거나 만료·위조 |
 | 403 | `FORBIDDEN` | 권한 없음 (고객 토큰으로 관리자 API 등) |
-| 403 | `SELF_APPROVAL_NOT_ALLOWED` | 정정을 요청한 관리자가 스스로 승인·반려 |
+| 403 | `FORBIDDEN` (역할) | 맡은 역할이 아닌 관리자의 변경 요청 (예: 운영자가 입금, 창구가 정정 승인) |
+| 403 | `SELF_APPROVAL_NOT_ALLOWED` | 요청한 관리자가 스스로 승인·반려 (역할 규칙에서 먼저 막히고, 코드·DB 가 한 번 더 막는다) |
 | 404 | `ACCOUNT_NOT_FOUND`, `CLOSING_NOT_FOUND`, `RESOURCE_NOT_FOUND` | 없는(또는 남의) 계좌, 없는 마감 실행, 없는 경로 |
 | 404 | `PRODUCT_NOT_FOUND` | 없는 예금 상품 |
 | 404 | `TRANSACTION_NOT_FOUND`, `CORRECTION_NOT_FOUND` | 정정하려는 거래가 없음, 없는 정정 요청 |
@@ -203,6 +216,7 @@ docker compose --profile deploy down   # 배포한 서버 내리기 (DB 는 그�
 | 409 | `ACCOUNT_CLOSED` | 해지된 계좌에 거래 또는 재해지 |
 | 409 | `CLOSING_ALREADY_RUNNING` | 같은 영업일 마감이 실행 중 |
 | 409 | `USERNAME_TAKEN` | 이미 쓰는 아이디로 가입·관리자 등록 |
+| 409 | `ADMIN_ALREADY_DECIDED` | 이미 승인·반려된 관리자 등록(두 책임자가 동시에 결정한 경우 포함) |
 | 409 | `PRODUCT_NOT_AVAILABLE`, `PRODUCT_NAME_TAKEN` | 판매 중지 상품으로 개설·이미 중지됐거나 기본 상품을 중지, 같은 이름의 상품 |
 | 409 | `ACCRUAL_ALREADY_RUNNING` | 같은 날 이자 적립이 동시에 실행됨 |
 | 409 | `ALREADY_REVERSED`, `CORRECTION_ALREADY_REQUESTED`, `CORRECTION_ALREADY_DECIDED` | 이미 정정된 거래, 승인 대기 요청이 이미 있음, 이미 승인·반려된 요청(동시 결정 포함) |
@@ -232,7 +246,7 @@ com.corebank
   closing      일 마감 대사 배치(Spring Batch 잡), 마감 결과 조회 API, 자동 마감 스케줄러
   customer     고객 계정(가입, 로그인 확인)
   auth         JWT 발급·검증, 보안 규칙(SecurityConfig), 로그인 API·잠금(LoginThrottle), 요청한 사람(Actor)
-  admin        관리자 계정(등록·목록), 관리자 조회 API(계좌 검색, 요약)
+  admin        관리자 계정(역할, 등록 요청·승인), 관리자 조회 API(계좌 검색, 요약)
   audit        감사 로그(요청마다 기록하는 필터, 조회 API)
   ratelimit    고정 구간 횟수 제한(RateLimiter), 지난 기록 정리
   common       공통 에러 응답(ApiExceptionHandler), 시계(Clock) 빈, DB 정밀도 현재 시각(DbTime)
@@ -263,6 +277,7 @@ com.corebank
 6. 원장 거래·분개·이체 기록은 한 번 쓰면 바뀌지 않는다 (DB 트리거, V12).
 7. 이자는 날짜마다 한 번만 쌓이고 한 번만 지급되며, 세전 = 세후 + 세금이다 (DB 기본키·CHECK, V15).
 8. 한 거래는 한 번만 역분개되고, 정정은 요청자와 다른 관리자만 승인한다 (DB 유니크 인덱스·CHECK 제약, V14).
+9. 관리자 역할은 하나뿐이고 바뀌지 않으며, 등록을 요청한 사람이 승인하지 않는다 (CHECK 제약, 앱 계정에 역할 열 UPDATE 권한 없음, V16).
 
 동시성 테스트는 요청이 끝난 뒤 1, 2번을 SQL 로 직접 확인한다. 관리자 요약 API 도 조회할 때마다 1, 2번과 이체 가계정 잔액을 점검해 보여 준다.
 
@@ -289,12 +304,25 @@ com.corebank
 
 - **분개는 뒤집기만 한다:** 원래 거래의 분개를 읽어 차변과 대변만 바꿔 다시 쓴다. 입금(차변 현금 / 대변 고객 예금)의 역분개는 차변 고객 예금 / 대변 현금이다. 거래 종류마다 분개를 따로 정하지 않아도 입금·출금·이체가 같은 규칙으로 되돌아간다. 역분개는 `REVERSAL_OUT`(잔액 감소)·`REVERSAL_IN`(잔액 증가) 두 종류이고, `reversal_of_id` 로 원래 거래를 가리킨다.
 - **이체는 통째로:** 이체는 출금 쪽과 입금 쪽 두 거래를 함께 되돌린다. 반쪽만 되돌리면 이체 가계정 합계가 0이 아니게 된다. 두 계좌는 이체와 같은 순서(id 작은 쪽부터)로 잠가 데드락을 피한다. 역분개에는 이체 번호를 넣지 않는다(넣으면 일 마감의 "이체 한 건 = 원장 거래 2건" 점검이 깨진다).
-- **혼자 할 수 없다(4-eyes):** 한 관리자가 요청하고 **다른** 관리자가 승인해야 돈이 움직인다. 요청자·승인자는 본문이 아니라 토큰의 아이디로 정한다. 코드가 막고(403), DB 제약(`decided_by <> requested_by`)이 한 번 더 막는다.
+- **혼자 할 수 없다(4-eyes):** 창구가 요청하고 책임자가 승인해야 돈이 움직인다. 관리자는 역할이 하나라 요청자와 승인자는 늘 다른 계정이다(아래 역할 분리). 요청자·승인자는 본문이 아니라 토큰의 아이디로 정한다. 역할 규칙이 먼저 막고(403), 코드와 DB 제약(`decided_by <> requested_by`)이 한 번 더 막는다.
 - **두 종류의 락:** 계좌는 비관적 락(입출금과 자주 부딪히고, 줄 서서 차례로 처리돼야 한다). 정정 요청은 JPA `@Version` 낙관적 락(두 관리자가 같은 요청을 동시에 결정하는 일은 드물고, 부딪히면 나중 사람에게 "이미 처리됨"(409)을 알리면 된다). 승인 결정(UPDATE)을 역분개보다 먼저 `saveAndFlush` 해서, 진 쪽이 돈을 움직이기 전에 실패하게 했다.
 - **한 번만:** 한 거래에 승인 대기 요청은 하나(함수 기반 유니크 인덱스), 한 거래의 역분개도 하나(`reversal_of_id` 유니크 인덱스). 그래서 승인에는 멱등성 키가 없다. 다시 보내면 409 로 끝난다.
 - **승인이 실패할 수 있다:** 고객이 이미 돈을 써서 되돌릴 잔액이 없으면 422(`INSUFFICIENT_BALANCE`), 계좌가 해지됐으면 409. 한 트랜잭션이라 요청은 승인 대기로 돌아가고, 반려로 닫을 수 있다.
 - **대상이 아닌 것:** 해지 지급(해지 계좌에는 돈이 다시 들어갈 수 없다)과 역분개 자체(되돌림의 되돌림은 이력을 꼬이게 한다. 다시 원래 거래를 하면 된다).
 - 승인자가 필요하므로 관리자 등록 API(`POST /admin/admins`)를 함께 만들었다.
+
+### 관리자 역할 분리
+
+정정을 만든 직후에는 관리자가 한 종류였고 관리자가 관리자를 바로 만들 수 있었다. 그러면 한 사람이 계정을 하나 더 만들어 자기 요청을 자기가 승인할 수 있어 4-eyes 가 이름뿐이다. 그래서 일을 역할로 나누고 계정 발급에도 두 사람이 필요하게 했다.
+
+- **역할은 하나만:** 창구(돈을 움직임), 책임자(남이 올린 것을 확인), 운영(마감·이자·상품·계정 요청). 한 계정이 요청과 승인을 함께 가지면 혼자서 통과하므로 여러 역할을 겸하지 못하게 했다. 역할은 바꿀 수 없다(엔티티 `updatable = false`, 앱 계정에 그 열 UPDATE 권한 없음). 몰래 역할을 올리는 길을 DB 에서 닫았다.
+- **토큰에 역할:** 로그인할 때 DB 에서 읽은 역할을 JWT `role` claim 에 넣는다. Spring Security 는 기본으로 `scope` 만 권한으로 바꾸므로 변환기를 하나 더 붙여 `role` 을 `ROLE_TELLER` 로 바꾼다(`scope` = 누구인가, `role` = 무슨 일을 맡았나). 서명 때문에 역할을 고친 토큰은 401 이다.
+- **규칙은 한곳에(SecurityConfig):** `@PreAuthorize` 를 컨트롤러마다 흩어 두지 않고 URL 규칙 표 하나로 모았다. "누가 무엇을 바꿀 수 있나" 를 한 화면에서 검토할 수 있다. 관리자 변경은 표에 없으면 막는다(`denyAll`). 새 API 를 만들고 규칙을 잊으면 모든 관리자에게 열리는 대신 아무에게도 열리지 않아 테스트에서 바로 드러난다(fail-closed). `AdminUserIntegrationTest` 가 변경 API × 역할 표 전체를 403 으로 확인한다.
+- **조회는 모두:** 책임자도 승인하려면 거래와 계좌를 봐야 하고, 운영자도 마감 불일치를 따라가려면 계좌를 봐야 한다. 그래서 GET 은 역할과 상관없이 연다.
+- **계정 발급도 두 사람:** 운영자가 등록을 요청하면 `PENDING` 이고, 책임자가 승인해야 `ACTIVE` 가 되어 로그인된다. 승인 전·반려된 계정의 로그인 실패는 비밀번호가 틀렸을 때와 똑같은 401 이다. 비밀번호를 먼저 비교해 응답 시간도 같다(승인 대기 중인 아이디가 있다는 것도 알려 주지 않는다). 두 책임자가 동시에 결정하면 `@Version` 으로 한쪽만 성공한다.
+- **처음 두 명은 서버 설정으로:** 처음에 관리자가 한 명뿐이면 아무도 승인할 수 없다. "처음 한 번은 승인 없이" 같은 예외를 앱에 두면 그 틈으로 혼자 계정을 늘릴 수 있어서, 첫 운영자와 첫 책임자를 둘 다 `.env` 로 만든다. 서버 설정을 다루는 사람은 원래 DB 소유자 권한도 가진 사람이라 새로 생기는 틈은 없다.
+- **JPA 에서 걸린 것:** 승인할 때 `status` 만 바꿨는데 UPDATE 가 `ORA-41900`(권한 없음)으로 실패했다. Hibernate 는 기본으로 바뀐 열이 아니라 `updatable` 인 **모든 열**을 SET 에 넣는다(문장을 미리 만들어 재사용하려고). 그래서 권한이 없는 `password_hash` 까지 들어갔다. 바꾸지 않는 열에 `updatable = false` 를 붙여 해결했다(`@DynamicUpdate` 로 바뀐 열만 보내는 방법도 있지만, "이 열은 바뀌지 않는다" 를 엔티티에 적어 두는 쪽을 골랐다).
+- 기능 전에 있던 관리자는 운영자가 된다(V16). 돈을 움직이거나 승인하는 역할을 확인 없이 줄 수 없어서다. 역할 기능 전에 발급된 토큰(`role` 없음)은 만료(30분)까지 조회만 된다.
 
 ### DB 계정 분리: 테이블 소유자와 앱 계정
 
@@ -376,7 +404,7 @@ Spring Batch 잡 하나가 네 단계를 순서대로 실행한다.
 
 - **토큰:** JWT(HS256, 30분). 서버가 토큰을 저장하지 않는다(STATELESS). 토큰의 `scope` 가 `ADMIN` 이면 관리자, `CUSTOMER` 면 고객이고, 고객 토큰에는 고객 번호(`cid`)가 들어 있다. 서명 때문에 고객이 `cid` 를 바꿀 수 없다.
 - **두 종류의 계정, 로그인은 하나:** 관리자(`admin_user`)와 고객(`customer`)은 테이블이 다르지만 로그인 주소는 `/auth/login` 하나다. 아이디가 관리자 계정이면 관리자로, 아니면 고객으로 확인하고 응답 `role` 로 알려 준다. 그래서 고객 가입은 관리자 아이디를 쓸 수 없다(409). 어느 경로든 비밀번호 비교는 한 번이라 응답 시간으로 관리자 아이디를 알아낼 수 없다. 비밀번호는 둘 다 BCrypt 해시로만 저장하고, 로그인 실패 시 아이디와 비밀번호 중 무엇이 틀렸는지 알려 주지 않는다. 없는 아이디도 비밀번호 비교를 한 번 해서 응답 시간으로 아이디 존재 여부를 알 수 없게 했다.
-- **URL 규칙 + 계좌 소유 확인:** URL 규칙(SecurityConfig)은 "로그인했는가, 관리자인가" 만 본다. "이 계좌가 본인 것인가" 는 요청 내용을 봐야 알 수 있어, 컨트롤러가 업무 처리 전에 `AccountAccessPolicy` 로 확인한다. 이체는 보내는 계좌만 본인 것이면 된다.
+- **URL 규칙 + 계좌 소유 확인:** URL 규칙(SecurityConfig)은 "로그인했는가, 관리자인가, 무슨 역할인가" 만 본다. "이 계좌가 본인 것인가" 는 요청 내용을 봐야 알 수 있어, 컨트롤러가 업무 처리 전에 `AccountAccessPolicy` 로 확인한다. 이체는 보내는 계좌만 본인 것이면 된다.
 - **남의 계좌는 403 이 아니라 404:** 403 이면 "그 번호의 계좌가 있다" 는 사실이 드러나, id 를 바꿔 가며 남의 계좌를 찾아낼 수 있다. 관리자가 이름만으로 연(주인 없는) 계좌도 고객에게는 남의 계좌다.
 - **가입:** 아이디는 영문 소문자로 시작하는 4~30자, 비밀번호는 10자 이상(복잡도 규칙보다 길이를 본다). 아이디 중복은 DB 유니크 제약으로 확인해, 동시에 같은 아이디로 가입해도 하나만 통과한다. 고객이 계좌를 열면 예금주는 항상 본인 이름이다.
 - **수취인 조회:** 받는 계좌는 보통 남의 계좌라 본인 확인 없이 조회되지만(고객은 시간당 30번, 아래 횟수 제한), 예금주 이름은 첫·끝 글자만 남기고 가리고(홍길동 → 홍*동) id·잔액은 주지 않는다. 같은 이유로 이체 응답의 받는 계좌 잔액도 고객에게는 null 이다. 고객 화면은 남의 계좌 id 를 모르므로 이체 요청에 계좌번호(`toAccountNumber`)를 쓴다.
@@ -415,7 +443,7 @@ Spring Batch 잡 하나가 네 단계를 순서대로 실행한다.
 ./gradlew test    # Docker 필요. Testcontainers 가 Oracle 컨테이너를 띄운다
 ```
 
-- **백엔드 295개**: 엔티티 단위 테스트, MockMvc 웹 계층 테스트, 실제 Oracle 통합 테스트. push·PR 마다 GitHub Actions 가 같은 테스트를 Linux 에서 돌린다(macOS 에서 안 보이던 시각 정밀도 버그를 여기서 찾았다).
+- **백엔드 301개**: 엔티티 단위 테스트, MockMvc 웹 계층 테스트, 실제 Oracle 통합 테스트. push·PR 마다 GitHub Actions 가 같은 테스트를 Linux 에서 돌린다(macOS 에서 안 보이던 시각 정밀도 버그를 여기서 찾았다).
   - 동시 출금·이체·해지에서 잔액과 원장이 맞는지
   - 이체 도중 실패하면 양쪽 모두 롤백되는지
   - 같은 키 동시 재전송이 한 번만 처리되는지
@@ -427,13 +455,15 @@ Spring Batch 잡 하나가 네 단계를 순서대로 실행한다.
   - 원장 거래·분개·이체 기록을 SQL 로 고치거나 지우면 DB 가 거부하는지
   - 적수가 하루 한 번만 쌓이고, 결산이 세전·세금·세후와 3줄 분개를 맞게 남기며 두 번 지급하지 않는지, 해지 시 이자를 함께 주는지, 한 계좌 실패가 다른 계좌 지급을 막지 않는지, 이자 거래가 있어도 일 마감이 BALANCED 인지, 계좌 목록이 상품을 N+1 없이 읽는지
   - 정정 승인 뒤 입금·출금·이체(양쪽)가 되돌아가고 원장 합계·이체 가계정이 맞는지, 요청자 본인 승인을 코드와 DB 가 모두 막는지, 승인과 반려를 동시에 보내면 하나만 성공하는지, 잔액이 모자라면 승인이 통째로 롤백되는지
+  - 변경 API 마다 맡은 역할이 아닌 관리자는 403 인지(역할 표 전체), 조회는 모든 역할이 되는지, 승인 전·반려된 관리자는 로그인할 수 없는지, 요청자가 자기 등록을 승인할 수 없는지, 역할 없는 옛 토큰은 조회만 되는지
   - 롤백된 출금, 로그인 실패, 401/403(무효 토큰 포함)도 감사 기록에 남고, 비밀번호는 남지 않으며, 기록을 고치거나 지우면 DB 가 거부하는지
-- **API 회귀 220개 요청 / 467개 검증**: [`postman/corebank-api.postman_collection.json`](postman/corebank-api.postman_collection.json). 서버를 띄운 뒤 위에서부터 순서대로 실행한다. 맨 앞 "0. 로그인" 에서 받은 관리자 토큰을 컬렉션 전체가 쓰고, 고객 폴더는 가입해서 받은 고객 토큰을 쓴다. 관리자 계정은 파일에 넣지 않고 실행할 때 넘긴다.
+- **API 회귀 229개 요청 / 483개 검증**: [`postman/corebank-api.postman_collection.json`](postman/corebank-api.postman_collection.json). 서버를 띄운 뒤 위에서부터 순서대로 실행한다. 맨 앞 "0. 로그인" 에서 운영자·책임자로 로그인하고, 운영자가 창구 등록을 요청하면 책임자가 승인한다. 그 창구 토큰을 컬렉션 기본값으로 쓰고, 운영·승인 요청만 운영자·책임자 토큰을 붙인다. 고객 폴더는 가입해서 받은 고객 토큰을 쓴다. 관리자 계정은 파일에 넣지 않고 실행할 때 넘긴다.
 
   ```bash
   set -a; . ./.env; set +a
   postman collection run postman/corebank-api.postman_collection.json \
-    --env-var "adminUsername=$ADMIN_USERNAME" --env-var "adminPassword=$ADMIN_PASSWORD"
+    --env-var "adminUsername=$ADMIN_USERNAME" --env-var "adminPassword=$ADMIN_PASSWORD" \
+    --env-var "approverUsername=$APPROVER_USERNAME" --env-var "approverPassword=$APPROVER_PASSWORD"
   ```
 
 ## DB 마이그레이션
@@ -455,6 +485,7 @@ Spring Batch 잡 하나가 네 단계를 순서대로 실행한다.
 | V13 | 로그인 시도(`login_attempt`), 횟수 제한(`rate_limit`) |
 | V14 | 거래 정정: 역분개 거래 종류·`reversal_of_id`, 정정 요청(`correction_request`) |
 | V15 | 예금 상품(`deposit_product`, 기본 상품), `account.product_id`, 이자 거래·계정과목, 일별 적수(`interest_accrual`), 이자 지급(`interest_payment`) |
+| V16 | 관리자 역할(`role`)·상태(`status`)·등록 요청자·승인자·`version`, 요청자≠승인자 CHECK. 기존 관리자는 운영자 |
 | R (반복) | 앱 계정 테이블 권한(`R__app_user_grants.sql`). 파일이 바뀔 때마다 다시 실행 |
 
 마이그레이션은 `./gradlew migrate` 로 실행한다(서버는 확인만 한다).
@@ -468,7 +499,9 @@ Spring Batch 잡 하나가 네 단계를 순서대로 실행한다.
 - 리프레시 토큰과 토큰 강제 무효화(로그아웃 차단 목록)가 없다. 그래서 토큰 수명을 30분으로 짧게 둔다.
 - 일 마감은 서버 한 대를 가정한다. 여러 대를 띄우면 각자 자동 마감을 실행하므로 ShedLock 같은 분산 잠금이 필요하다(같은 날짜 동시 실행은 DB 가 하나만 통과시킨다).
 - 일 마감은 불일치를 찾아 기록만 한다. 잘못된 **거래**는 정정(역분개)·승인으로 되돌릴 수 있지만, 원장 없이 바뀐 잔액 컬럼(BALANCE_LEDGER_MISMATCH)처럼 거래가 아닌 데이터 오류를 바로잡는 기능은 없다.
-- 관리자 권한은 한 종류다. 관리자는 누구나 다른 관리자를 등록할 수 있어, 한 사람이 계정을 하나 더 만들어 스스로 승인할 수 있다. 실무는 계정 발급을 별도 부서·별도 승인으로 관리하고 역할(요청자·승인자)을 나눈다.
+- 관리자 계정을 정지·삭제하거나 비밀번호를 바꾸는 기능이 없다. 퇴사자 계정은 DB 소유자가 직접 처리해야 한다. 역할은 바꿀 수 없어, 역할을 옮기려면 새 계정을 등록한다.
+- 운영자와 책임자가 짜면(두 사람의 공모) 가짜 창구 계정을 만들 수 있다. 4-eyes 는 한 사람의 실수·부정을 막는 장치이고, 공모는 감사 로그(누가 요청하고 누가 승인했나)로 사후에 찾는다.
+- 역할 규칙은 URL 단위다. "자기 지점 계좌만" 같은 데이터 단위 권한은 없다.
 - 이자는 하루 단위다. 해지하는 날과 오늘 하루치는 아직 적수가 없어 붙지 않는다. 적립은 매일 자동으로 돈다는 가정이라, 해지 뒤에 그 이전 날짜를 늦게 적립하면 그 적수는 지급되지 않은 채 남는다.
 - 금리 변경·우대금리·정기예금(만기, 중도해지 이율)·복리는 없다. 상품 하나에 금리 하나(단리, 매달 지급)다. 이자 세금은 일반과세(15.4%)만이고 비과세·세금우대는 없으며, 예수금을 세무서에 내는(납부) 처리도 없다.
 - 결산은 계좌를 하나씩 처리한다. 계좌가 아주 많으면 Spring Batch 청크로 나누는 것이 맞다(일 마감 계좌 대사처럼).

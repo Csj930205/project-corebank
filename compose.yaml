@@ -60,6 +60,8 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       ADMIN_USERNAME: ${ADMIN_USERNAME}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      APPROVER_USERNAME: ${APPROVER_USERNAME}
+      APPROVER_PASSWORD: ${APPROVER_PASSWORD}
     depends_on:
       oracle:
         condition: service_healthy

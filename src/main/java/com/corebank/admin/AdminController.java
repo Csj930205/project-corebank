@@ -13,6 +13,9 @@ import org.springframework.format.annotation.DateTimeFormat;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import jakarta.validation.constraints.Pattern;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -31,7 +34,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 관리자 API. SecurityConfig 가 /admin/** 에 관리자 토큰을 요구하므로, 여기까지 온 요청은 이미 관리자다.
+ * 관리자 API. SecurityConfig 가 /admin/** 에 관리자 토큰을, 변경 요청에는 맞는 역할을 요구하므로
+ * 여기까지 온 요청은 이미 권한이 확인됐다.
  */
 @RestController
 @RequestMapping("/admin")
@@ -102,34 +106,61 @@ public class AdminController {
 
 	/**
 	 * 관리자 등록 요청. 아이디 규칙은 고객과 같고, 비밀번호는 첫 관리자(.env)와 같이 12자 이상이다.
+	 *
+	 * @param role 맡길 역할. 정하면 바꿀 수 없다.
 	 */
 	public record CreateAdminRequest(
 			@NotBlank @Pattern(regexp = "[a-z][a-z0-9_]{3,29}") String username,
-			@NotBlank @Size(min = 12, max = 100) String password) {
+			@NotBlank @Size(min = 12, max = 100) String password,
+			@NotNull AdminRole role) {
 	}
 
-	/** 비밀번호 해시는 내보내지 않는다. */
-	public record AdminUserResponse(Long id, String username, LocalDateTime createdAt) {
+	/**
+	 * 비밀번호 해시는 내보내지 않는다.
+	 *
+	 * @param requestedBy 등록을 요청한 운영자. 서버 설정으로 만든 계정은 null
+	 * @param decidedBy   승인·반려한 책임자. 기다리는 중이거나 서버 설정으로 만든 계정은 null
+	 */
+	public record AdminUserResponse(Long id, String username, AdminRole role, AdminUserStatus status,
+			String requestedBy, String decidedBy, LocalDateTime decidedAt, LocalDateTime createdAt) {
 
 		static AdminUserResponse from(AdminUser user) {
-			return new AdminUserResponse(user.getId(), user.getUsername(), user.getCreatedAt());
+			return new AdminUserResponse(user.getId(), user.getUsername(), user.getRole(), user.getStatus(),
+					user.getRequestedBy(), user.getDecidedBy(), user.getDecidedAt(), user.getCreatedAt());
 		}
 	}
 
 	public record AdminUsers(List<AdminUserResponse> content) {
 	}
 
-	/** GET /admin/admins : 관리자 목록(등록 순) */
+	/** GET /admin/admins?status= : 관리자 목록(등록 순). status 가 없으면 전체 */
 	@GetMapping("/admins")
-	public AdminUsers admins() {
-		return new AdminUsers(adminUserService.list().stream().map(AdminUserResponse::from).toList());
+	public AdminUsers admins(@RequestParam(required = false) AdminUserStatus status) {
+		return new AdminUsers(adminUserService.list(status).stream().map(AdminUserResponse::from).toList());
 	}
 
-	/** POST /admin/admins {username, password} : 관리자 등록. 201, 이미 쓰는 아이디면 409 USERNAME_TAKEN */
+	/**
+	 * POST /admin/admins {username, password, role} : 관리자 등록 요청(운영자). 201, status=PENDING.
+	 * 책임자가 승인해야 로그인할 수 있다. 이미 쓰는 아이디면 409 USERNAME_TAKEN
+	 */
 	@PostMapping("/admins")
-	public ResponseEntity<AdminUserResponse> createAdmin(@Valid @RequestBody CreateAdminRequest request) {
-		AdminUser user = adminUserService.create(request.username(), request.password());
+	public ResponseEntity<AdminUserResponse> requestAdmin(@Valid @RequestBody CreateAdminRequest request,
+			@AuthenticationPrincipal Jwt jwt) {
+		AdminUser user = adminUserService.request(request.username(), request.password(), request.role(),
+				jwt.getSubject());
 		return ResponseEntity.created(URI.create("/admin/admins/" + user.getId())).body(AdminUserResponse.from(user));
+	}
+
+	/** POST /admin/admins/{id}/approval : 등록 승인(책임자). 이미 결정됐으면 409 ADMIN_ALREADY_DECIDED */
+	@PostMapping("/admins/{id}/approval")
+	public AdminUserResponse approveAdmin(@PathVariable long id, @AuthenticationPrincipal Jwt jwt) {
+		return AdminUserResponse.from(adminUserService.approve(id, jwt.getSubject()));
+	}
+
+	/** POST /admin/admins/{id}/rejection : 등록 반려(책임자) */
+	@PostMapping("/admins/{id}/rejection")
+	public AdminUserResponse rejectAdmin(@PathVariable long id, @AuthenticationPrincipal Jwt jwt) {
+		return AdminUserResponse.from(adminUserService.reject(id, jwt.getSubject()));
 	}
 
 	/** GET /admin/summary : 계좌 현황과 원장 점검 결과 */

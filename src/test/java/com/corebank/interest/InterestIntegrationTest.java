@@ -8,6 +8,7 @@ import com.corebank.closing.ClosingTrigger;
 import com.corebank.closing.DailyClosing;
 import com.corebank.correction.CorrectionService;
 import com.corebank.correction.NotCorrectableException;
+import com.corebank.admin.AdminRole;
 import com.corebank.auth.JwtTokenService;
 import com.corebank.product.DepositProduct;
 import com.corebank.product.ProductNotAvailableException;
@@ -246,7 +247,7 @@ class InterestIntegrationTest {
 	/** HTTP: 계좌 이자 현황의 예상 이자, 관리자 적립·결산 API, 상품 등록 검증 */
 	@Test
 	void httpFlow() throws Exception {
-		String admin = "Bearer " + tokenService.issueAdminToken("test-admin").value();
+		String admin = "Bearer " + tokenService.issueAdminToken("test-admin", AdminRole.OPERATOR).value();
 		Long account = openWith(product("3.65"), 1_000_000);
 
 		mockMvc.perform(post("/admin/interest/accruals").header(HttpHeaders.AUTHORIZATION, admin)
@@ -280,7 +281,8 @@ class InterestIntegrationTest {
 							.contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"잘못된 금리\",\"annualRate\":" + rate + "}"))
 					.andExpect(status().isBadRequest());
 		}
-		mockMvc.perform(post("/accounts").header(HttpHeaders.AUTHORIZATION, admin)
+		String teller = "Bearer " + tokenService.issueAdminToken("test-teller", AdminRole.TELLER).value();
+		mockMvc.perform(post("/accounts").header(HttpHeaders.AUTHORIZATION, teller)
 						.contentType(MediaType.APPLICATION_JSON).content("{\"ownerName\":\"홍길동\",\"productId\":999999}"))
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.code").value("PRODUCT_NOT_FOUND"));
