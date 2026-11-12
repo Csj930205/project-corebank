@@ -8,7 +8,6 @@ import java.sql.Date;
 import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Optional;
 
 /**
@@ -80,15 +79,6 @@ public class InterestAccruals {
 				UPDATE interest_accrual SET payment_id = ?
 				WHERE account_id = ? AND payment_id IS NULL AND accrual_date <= ?
 				""", paymentId, accountId, Date.valueOf(upTo));
-	}
-
-	/** upTo 이하에 지급하지 않은 적수가 있는 계좌 */
-	public List<Long> accountsWithUnpaid(LocalDate upTo) {
-		return jdbc.queryForList("""
-				SELECT DISTINCT account_id FROM interest_accrual
-				WHERE payment_id IS NULL AND accrual_date <= ?
-				ORDER BY account_id
-				""", Long.class, Date.valueOf(upTo));
 	}
 
 }

@@ -18,6 +18,7 @@ import com.corebank.closing.ClosingAlreadyRunningException;
 import com.corebank.closing.ClosingNotFoundException;
 import com.corebank.interest.AccrualAlreadyRunningException;
 import com.corebank.interest.MonthNotEndedException;
+import com.corebank.interest.SettlementAlreadyRunningException;
 import com.corebank.product.ProductNameTakenException;
 import com.corebank.product.ProductNotAvailableException;
 import com.corebank.product.ProductNotFoundException;
@@ -167,6 +168,13 @@ public class ApiExceptionHandler {
 	@ResponseStatus(HttpStatus.UNPROCESSABLE_CONTENT)
 	public ErrorResponse handleMonthNotEnded(MonthNotEndedException e) {
 		return new ErrorResponse("MONTH_NOT_ENDED", e.getMessage());
+	}
+
+	/** 같은 달 이자 결산 배치가 이미 실행 중: 409 */
+	@ExceptionHandler(SettlementAlreadyRunningException.class)
+	@ResponseStatus(HttpStatus.CONFLICT)
+	public ErrorResponse handleSettlementRunning(SettlementAlreadyRunningException e) {
+		return new ErrorResponse("SETTLEMENT_ALREADY_RUNNING", e.getMessage());
 	}
 
 	/** 같은 날 이자 적립이 동시에 실행됨: 409 */

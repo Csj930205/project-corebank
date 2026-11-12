@@ -9396,7 +9396,8 @@
                   "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
                   "const b = pm.response.json();",
                   "pm.test(\"결산 결과 형식\", () => { pm.expect(b.month).to.eql(pm.collectionVariables.get(\"lastMonth\")); [\"paid\",\"skipped\",\"failed\",\"totalGross\",\"totalTax\",\"totalNet\"].forEach(k => pm.expect(b[k]).to.be.a(\"number\")); });",
-                  "pm.test(\"세전 = 세금 + 세후\", () => pm.expect(b.totalGross).to.eql(b.totalTax + b.totalNet));"
+                  "pm.test(\"세전 = 세금 + 세후\", () => pm.expect(b.totalGross).to.eql(b.totalTax + b.totalNet));",
+                  "pm.test(\"배치 실행 결과\", () => { pm.expect(b.status).to.eql(\"COMPLETED\"); pm.expect(b.jobExecutionId).to.be.a(\"number\"); });"
                 ]
               }
             }

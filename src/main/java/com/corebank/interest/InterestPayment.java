@@ -68,11 +68,15 @@ public class InterestPayment {
 	@Column(name = "paid_at", nullable = false, updatable = false)
 	private LocalDateTime paidAt;
 
+	// 이 이자를 지급한 결산 배치 실행(BATCH_JOB_EXECUTION). 해지 지급과 배치 전환(V17) 전 결산은 null 이다.
+	@Column(name = "job_execution_id", updatable = false)
+	private Long jobExecutionId;
+
 	protected InterestPayment() {
 	}
 
 	static InterestPayment of(Long accountId, InterestTrigger trigger, InterestAccruals.Unpaid unpaid,
-			InterestCalculator.Interest interest, Long ledgerTransactionId) {
+			InterestCalculator.Interest interest, Long ledgerTransactionId, Long jobExecutionId) {
 		InterestPayment payment = new InterestPayment();
 		payment.accountId = accountId;
 		payment.trigger = trigger;
@@ -86,6 +90,7 @@ public class InterestPayment {
 		payment.netAmount = interest.net();
 		payment.ledgerTransactionId = ledgerTransactionId;
 		payment.paidAt = DbTime.now();
+		payment.jobExecutionId = jobExecutionId;
 		return payment;
 	}
 

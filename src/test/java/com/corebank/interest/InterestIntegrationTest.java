@@ -189,8 +189,9 @@ class InterestIntegrationTest {
 	}
 
 	/**
-	 * 결산은 계좌마다 따로 커밋한다. 한 계좌가 실패해도(잔액 한도 초과) 다른 계좌는 지급되고, 실패한 계좌의 적수는
-	 * 지급되지 않은 채 남아 다음 결산에서 다시 시도된다.
+	 * 결산 배치는 100개씩 커밋한다. 한 계좌가 실패하면(잔액 한도 초과) 그 chunk 를 롤백한 뒤 한 건씩 다시 써서(chunk scan)
+	 * 실패한 계좌만 건너뛴다. 같은 chunk 의 다른 계좌는 지급되고, 실패한 계좌의 적수는 남아 다음 결산에서 다시 시도된다.
+	 * 잡 자체는 끝까지 돈다(COMPLETED).
 	 */
 	@Test
 	void oneAccountFailureDoesNotStopOthers() {
@@ -201,6 +202,7 @@ class InterestIntegrationTest {
 
 		InterestService.SettlementResult result = interestService.settle(YearMonth.from(TODAY));
 
+		assertThat(result.status()).isEqualTo("COMPLETED");
 		assertThat(result.failed()).isPositive();
 		assertThat(accountService.get(full).getBalance()).isEqualTo(Long.MAX_VALUE);
 		assertThat(jdbcTemplate.queryForObject(
@@ -209,6 +211,67 @@ class InterestIntegrationTest {
 		assertThat(jdbcTemplate.queryForObject(
 				"SELECT COUNT(*) FROM interest_payment WHERE account_id = ?", Long.class, full)).isZero();
 		assertThat(accountService.get(normal).getBalance()).isEqualTo(1_000_090);
+		assertThat(jdbcTemplate.queryForObject(
+				"SELECT job_execution_id FROM interest_payment WHERE account_id = ?", Long.class, normal))
+				.isEqualTo(result.jobExecutionId());
+	}
+
+	/**
+	 * chunk(100)를 여러 번 넘는 계좌 수. 지급한 계좌가 reader 조건에서 빠지는데도(적수에 지급 번호) 건너뛰는 계좌가 없어야
+	 * 한다. OFFSET 페이징이면 결과가 앞에서 줄어 다음 페이지가 밀린다. reader 는 "마지막 id 다음부터" 라 괜찮다.
+	 * 결과 합계는 이 실행이 남긴 지급 기록(job_execution_id)과 같고, 해지 계좌는 걸러 낸 수(skipped)로 센다.
+	 */
+	@Test
+	void settlesEveryAccountAcrossChunks() {
+		DepositProduct product = product("3.65");
+		List<Long> accounts = new java.util.ArrayList<>();
+		for (int i = 0; i < 250; i++) {
+			accounts.add(accountService.open("결산" + i, product.getId()).getId());
+		}
+		// 250개 계좌에 입금 거래를 만드는 대신 적수를 직접 넣는다(100만 원 × 3.65% = 하루 100원).
+		jdbcTemplate.batchUpdate("""
+				INSERT INTO interest_accrual (account_id, accrual_date, balance, annual_rate, created_at)
+				VALUES (?, ?, 1000000, 3.65, LOCALTIMESTAMP)
+				""", accounts, accounts.size(), (ps, id) -> {
+			ps.setLong(1, id);
+			ps.setDate(2, java.sql.Date.valueOf(TODAY));
+		});
+		Long closed = openWith(product, 1_000_000);
+		interestService.accrue(TODAY);
+		accountService.close(closed, newKey());
+		// 해지 지급 뒤 늦게 쌓인 적수(해지 전날 적립이 늦게 돈 경우). 결산은 해지 계좌를 건너뛴다.
+		jdbcTemplate.update("""
+				INSERT INTO interest_accrual (account_id, accrual_date, balance, annual_rate, created_at)
+				VALUES (?, ?, 1000000, 3.65, LOCALTIMESTAMP)
+				""", closed, java.sql.Date.valueOf(TOMORROW));
+
+		InterestService.SettlementResult result = interestService.settle(YearMonth.from(TOMORROW));
+
+		assertThat(result.status()).isEqualTo("COMPLETED");
+		assertThat(result.skipped()).isPositive();
+		assertThat(jdbcTemplate.queryForObject("""
+				SELECT COUNT(*) FROM interest_payment
+				WHERE job_execution_id = ? AND net_amount = 90 AND account_id IN (SELECT account_id FROM interest_accrual
+				    WHERE accrual_date = ? AND balance = 1000000 AND annual_rate = 3.65 AND payment_id IS NOT NULL)
+				""", Long.class, result.jobExecutionId(), java.sql.Date.valueOf(TODAY)))
+				.isGreaterThanOrEqualTo(250);
+		for (Long account : accounts) {
+			assertThat(accountService.get(account).getBalance()).isEqualTo(90);
+		}
+		assertThat(jdbcTemplate.queryForObject(
+				"SELECT COUNT(*) FROM interest_payment WHERE job_execution_id = ?", Long.class, result.jobExecutionId()))
+				.isEqualTo(result.paid());
+		assertThat(jdbcTemplate.queryForObject(
+				"SELECT COALESCE(SUM(net_amount), 0) FROM interest_payment WHERE job_execution_id = ?", Long.class,
+				result.jobExecutionId())).isEqualTo(result.totalNet());
+		// 해지 계좌의 늦은 적수는 지급되지 않고 남는다.
+		assertThat(jdbcTemplate.queryForObject(
+				"SELECT COUNT(*) FROM interest_accrual WHERE account_id = ? AND payment_id IS NULL", Long.class, closed))
+				.isEqualTo(1);
+		// 100개씩 커밋: 250개면 chunk 3번 이상(다른 테스트 계좌가 더 있을 수 있다)
+		assertThat(jdbcTemplate.queryForObject(
+				"SELECT COMMIT_COUNT FROM BATCH_STEP_EXECUTION WHERE JOB_EXECUTION_ID = ?", Long.class,
+				result.jobExecutionId())).isGreaterThanOrEqualTo(3);
 	}
 
 	/** 해지하면 어제(시계 기준)까지 쌓인 이자를 먼저 넣고, 이자까지 포함한 잔액을 지급한다. */
