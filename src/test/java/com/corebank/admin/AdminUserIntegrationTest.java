@@ -1,6 +1,7 @@
 package com.corebank.admin;
 
 import com.corebank.TestcontainersConfiguration;
+import com.corebank.auth.AuthSessionService;
 import com.corebank.auth.JwtTokenService;
 import com.corebank.customer.CustomerService;
 import com.jayway.jsonpath.JsonPath;
@@ -48,7 +49,7 @@ class AdminUserIntegrationTest {
 	private MockMvc mockMvc;
 
 	@Autowired
-	private JwtTokenService tokenService;
+	private AuthSessionService tokenService;
 
 	@Autowired
 	private JwtEncoder jwtEncoder;
@@ -258,19 +259,22 @@ class AdminUserIntegrationTest {
 		}
 	}
 
-	/** 역할이 없는 관리자 토큰(역할 기능 전에 발급된 토큰)은 조회만 된다. 30분 안에 만료된다. */
+	/**
+	 * 로그인 세션 기능 전에 발급된 토큰(세션 번호 sid 가 없음)은 서명이 맞아도 401 이다. 배포 직후 한 번 다시 로그인하면 된다.
+	 * (역할이 없던 더 옛날 토큰도 sid 가 없으므로 같이 막힌다.)
+	 */
 	@Test
-	void tokenWithoutRoleCanOnlyRead() throws Exception {
+	void tokenWithoutSessionIsRejected() throws Exception {
 		Instant now = Instant.now();
 		JwtClaimsSet claims = JwtClaimsSet.builder().issuer(JwtTokenService.ISSUER).subject(OPERATOR)
-				.issuedAt(now).expiresAt(now.plusSeconds(600)).claim("scope", "ADMIN").build();
+				.issuedAt(now).expiresAt(now.plusSeconds(600)).claim("scope", "ADMIN").claim("role", "OPERATOR").build();
 		String legacy = "Bearer " + jwtEncoder.encode(JwtEncoderParameters.from(
 				JwsHeader.with(MacAlgorithm.HS256).build(), claims)).getTokenValue();
 
-		mockMvc.perform(get("/admin/accounts").header(HttpHeaders.AUTHORIZATION, legacy)).andExpect(status().isOk());
+		mockMvc.perform(get("/admin/accounts").header(HttpHeaders.AUTHORIZATION, legacy))
+				.andExpect(status().isUnauthorized());
 		mockMvc.perform(post("/admin/closings").header(HttpHeaders.AUTHORIZATION, legacy))
-				.andExpect(status().isForbidden());
-		mockMvc.perform(post("/accounts").header(HttpHeaders.AUTHORIZATION, legacy)).andExpect(status().isForbidden());
+				.andExpect(status().isUnauthorized());
 	}
 
 }

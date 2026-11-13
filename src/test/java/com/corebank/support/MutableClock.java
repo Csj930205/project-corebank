@@ -36,6 +36,14 @@ public class MutableClock extends Clock {
 		offset = Duration.ofDays(days);
 	}
 
+	/** 지금 위치에서 더 앞으로 옮긴다 */
+	public void moveBy(Duration duration) {
+		if (duration.isNegative()) {
+			throw new IllegalArgumentException("시계는 앞으로만 옮긴다: " + duration);
+		}
+		offset = offset.plus(duration);
+	}
+
 	/** 실제 오늘에서 그 날짜의 같은 시각으로 옮긴다. 오늘보다 앞이면 거부한다 */
 	public void moveTo(LocalDate date) {
 		long days = java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(zone), date);

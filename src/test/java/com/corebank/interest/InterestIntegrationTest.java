@@ -9,7 +9,7 @@ import com.corebank.closing.DailyClosing;
 import com.corebank.correction.CorrectionService;
 import com.corebank.correction.NotCorrectableException;
 import com.corebank.admin.AdminRole;
-import com.corebank.auth.JwtTokenService;
+import com.corebank.auth.AuthSessionService;
 import com.corebank.product.DepositProduct;
 import com.corebank.product.ProductNotAvailableException;
 import com.corebank.product.ProductService;
@@ -86,7 +86,7 @@ class InterestIntegrationTest {
 	private JdbcTemplate jdbcTemplate;
 
 	@Autowired
-	private JwtTokenService tokenService;
+	private AuthSessionService tokenService;
 
 	@Autowired
 	private MockMvc mockMvc;

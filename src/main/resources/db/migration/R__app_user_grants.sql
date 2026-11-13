@@ -45,6 +45,14 @@ GRANT SELECT, INSERT ON customer TO ${app_user};
 GRANT SELECT ON admin_user_seq TO ${app_user};
 GRANT SELECT ON customer_seq TO ${app_user};
 
+-- 로그인 세션: 만들고, 리프레시·끊기 때 그 열만 바꾼다. 누구의 세션인지·만료 시각은 앱도 못 바꾼다(세션을 늘릴 수 없다).
+GRANT SELECT, INSERT ON auth_session TO ${app_user};
+GRANT UPDATE (last_refreshed_at, revoked_at, revoke_reason) ON auth_session TO ${app_user};
+-- 리프레시 토큰: 만들고, 쓴 표시만 한다
+GRANT SELECT, INSERT ON refresh_token TO ${app_user};
+GRANT UPDATE (used_at) ON refresh_token TO ${app_user};
+GRANT SELECT ON refresh_token_seq TO ${app_user};
+
 -- 감사 로그: 추가만
 GRANT SELECT, INSERT ON audit_log TO ${app_user};
 GRANT SELECT ON audit_log_seq TO ${app_user};

@@ -20,6 +20,8 @@ public enum AuditAction {
 	LOGIN("POST", "/auth/login"),
 	CUSTOMER_LOGIN("POST", "/auth/customer/login"),
 	CUSTOMER_SIGNUP("POST", "/auth/customer/signup"),
+	TOKEN_REFRESH("POST", "/auth/refresh"),
+	LOGOUT("POST", "/auth/logout"),
 
 	ACCOUNT_OPEN("POST", "/accounts"),
 	MY_ACCOUNTS("GET", "/accounts"),

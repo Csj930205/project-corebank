@@ -4,7 +4,7 @@ import com.corebank.TestcontainersConfiguration;
 import com.corebank.support.SchemaOwner;
 import com.jayway.jsonpath.JsonPath;
 import com.corebank.admin.AdminRole;
-import com.corebank.auth.JwtTokenService;
+import com.corebank.auth.AuthSessionService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -53,7 +53,7 @@ class AuditLogIntegrationTest {
 	private SchemaOwner owner;
 
 	@Autowired
-	private JwtTokenService tokenService;
+	private AuthSessionService tokenService;
 
 	// ───────────────────────── 돈이 움직이는 요청 ─────────────────────────
 

@@ -15,6 +15,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
@@ -55,6 +56,18 @@ class AuthIntegrationTest {
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
 
+	@Autowired
+	private AuthSessionService sessions;
+
+	@Autowired
+	private JwtDecoder jwtDecoder;
+
+	/** 살아 있는 로그인 세션 번호. 직접 만든 토큰이 세션 검증을 통과하게 넣는다(권한 규칙만 보려는 테스트) */
+	private String activeSessionId() {
+		return jwtDecoder.decode(sessions.issueAdminToken(USERNAME, AdminRole.OPERATOR).value())
+				.getClaimAsString(JwtTokenService.SESSION_ID_CLAIM);
+	}
+
 	private String login(String username, String password) throws Exception {
 		String body = mockMvc.perform(post("/auth/login")
 						.contentType(MediaType.APPLICATION_JSON)
@@ -84,7 +97,7 @@ class AuthIntegrationTest {
 						.content("{\"username\":\"" + USERNAME + "\",\"password\":\"" + PASSWORD + "\"}"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.tokenType").value("Bearer"))
-				.andExpect(jsonPath("$.expiresIn").value(1800))
+				.andExpect(jsonPath("$.expiresIn").value(900))
 				.andExpect(jsonPath("$.username").value(USERNAME))
 				.andExpect(jsonPath("$.role").value("ADMIN"))
 				.andExpect(jsonPath("$.accessToken").isString());
@@ -134,11 +147,12 @@ class AuthIntegrationTest {
 				.andExpect(jsonPath("$.role").value("ADMIN"));
 	}
 
-	/** 만료된 토큰은 401. 시계를 2시간 전으로 돌려 발급한 토큰(30분짜리)으로 시험한다. */
+	/** 만료된 토큰은 401. 시계를 2시간 전으로 돌려 발급한 토큰(15분짜리)으로 시험한다. 세션은 살아 있어도 만료가 먼저다. */
 	@Test
 	void expiredTokenIsRejected() throws Exception {
 		Clock twoHoursAgo = Clock.fixed(Instant.now().minus(Duration.ofHours(2)), ZoneOffset.UTC);
-		String expired = new JwtTokenService(jwtEncoder, twoHoursAgo).issueAdminToken(USERNAME, AdminRole.OPERATOR).value();
+		String expired = new JwtTokenService(jwtEncoder, twoHoursAgo, Duration.ofMinutes(15))
+				.issueAdminToken(USERNAME, AdminRole.OPERATOR, activeSessionId()).value();
 
 		mockMvc.perform(get("/admin/accounts").header(HttpHeaders.AUTHORIZATION, bearer(expired)))
 				.andExpect(status().isUnauthorized())
@@ -150,7 +164,7 @@ class AuthIntegrationTest {
 	void tokenSignedWithOtherKeyIsRejected() throws Exception {
 		byte[] otherKey = "attacker-key-attacker-key-attacker-key!!".getBytes(StandardCharsets.UTF_8);
 		JwtEncoder forger = new NimbusJwtEncoder(new ImmutableSecret<>(new SecretKeySpec(otherKey, "HmacSHA256")));
-		String forged = encode(forger, JwtTokenService.ISSUER, "ADMIN");
+		String forged = encode(forger, JwtTokenService.ISSUER, "ADMIN", activeSessionId());
 
 		mockMvc.perform(get("/admin/accounts").header(HttpHeaders.AUTHORIZATION, bearer(forged)))
 				.andExpect(status().isUnauthorized());
@@ -159,7 +173,7 @@ class AuthIntegrationTest {
 	/** 우리 키로 서명했어도 발급자(iss)가 다르면 401 */
 	@Test
 	void tokenWithOtherIssuerIsRejected() throws Exception {
-		String token = encode(jwtEncoder, "someone-else", "ADMIN");
+		String token = encode(jwtEncoder, "someone-else", "ADMIN", activeSessionId());
 
 		mockMvc.perform(get("/admin/accounts").header(HttpHeaders.AUTHORIZATION, bearer(token)))
 				.andExpect(status().isUnauthorized());
@@ -168,7 +182,7 @@ class AuthIntegrationTest {
 	/** 유효한 토큰이어도 관리자 권한(scope=ADMIN)이 없으면 403 */
 	@Test
 	void tokenWithoutAdminScopeIsForbidden() throws Exception {
-		String token = encode(jwtEncoder, JwtTokenService.ISSUER, "CUSTOMER");
+		String token = encode(jwtEncoder, JwtTokenService.ISSUER, "CUSTOMER", activeSessionId());
 
 		mockMvc.perform(get("/admin/accounts").header(HttpHeaders.AUTHORIZATION, bearer(token)))
 				.andExpect(status().isForbidden())
@@ -192,7 +206,7 @@ class AuthIntegrationTest {
 						.content("{\"ownerName\":\"인증없이\"}"))
 				.andExpect(status().isUnauthorized());
 		mockMvc.perform(get("/accounts/999999999")
-						.header(HttpHeaders.AUTHORIZATION, bearer(encode(jwtEncoder, JwtTokenService.ISSUER, "TELLER"))))
+						.header(HttpHeaders.AUTHORIZATION, bearer(encode(jwtEncoder, JwtTokenService.ISSUER, "TELLER", activeSessionId()))))
 				.andExpect(status().isForbidden())
 				.andExpect(jsonPath("$.code").value("FORBIDDEN"));
 		mockMvc.perform(get("/accounts/999999999")
@@ -201,7 +215,7 @@ class AuthIntegrationTest {
 				.andExpect(jsonPath("$.code").value("ACCOUNT_NOT_FOUND"));
 	}
 
-	private static String encode(JwtEncoder encoder, String issuer, String scope) {
+	private static String encode(JwtEncoder encoder, String issuer, String scope, String sessionId) {
 		Instant now = Instant.now();
 		JwtClaimsSet claims = JwtClaimsSet.builder()
 				.issuer(issuer)
@@ -209,6 +223,7 @@ class AuthIntegrationTest {
 				.issuedAt(now)
 				.expiresAt(now.plus(Duration.ofMinutes(10)))
 				.claim("scope", scope)
+				.claim(JwtTokenService.SESSION_ID_CLAIM, sessionId)
 				.build();
 		return encoder.encode(JwtEncoderParameters.from(JwsHeader.with(MacAlgorithm.HS256).build(), claims)).getTokenValue();
 	}

@@ -5,7 +5,7 @@ import com.corebank.account.AccountClosedException;
 import com.corebank.account.AccountService;
 import com.corebank.account.InsufficientBalanceException;
 import com.corebank.admin.AdminRole;
-import com.corebank.auth.JwtTokenService;
+import com.corebank.auth.AuthSessionService;
 import com.corebank.ledger.LedgerTransaction;
 import com.corebank.ledger.TransactionType;
 import com.corebank.transfer.TransferService;
@@ -62,7 +62,7 @@ class CorrectionIntegrationTest {
 	private JdbcTemplate jdbcTemplate;
 
 	@Autowired
-	private JwtTokenService tokenService;
+	private AuthSessionService tokenService;
 
 	@Autowired
 	private MockMvc mockMvc;

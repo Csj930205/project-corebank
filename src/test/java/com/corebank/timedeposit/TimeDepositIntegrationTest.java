@@ -6,7 +6,7 @@ import com.corebank.account.AccountRepository;
 import com.corebank.account.AccountService;
 import com.corebank.account.AccountStatus;
 import com.corebank.admin.AdminRole;
-import com.corebank.auth.JwtTokenService;
+import com.corebank.auth.AuthSessionService;
 import com.corebank.correction.CorrectionService;
 import com.corebank.correction.NotCorrectableException;
 import com.corebank.idempotency.IdempotencyKey;
@@ -102,7 +102,7 @@ class TimeDepositIntegrationTest {
 	private JdbcTemplate jdbc;
 
 	@Autowired
-	private JwtTokenService tokenService;
+	private AuthSessionService tokenService;
 
 	@Autowired
 	private PlatformTransactionManager transactionManager;

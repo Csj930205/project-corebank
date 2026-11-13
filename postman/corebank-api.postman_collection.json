@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "project-corebank API",
-    "description": "계좌 개설/조회, 입금, 출금, 이체, 멱등성, 거래내역, 계좌 해지, 일 마감, 고객 인증, 감사 로그, 횟수 제한, 계좌 검색, 거래 정정, 예금 상품·이자, 정기예금 전체 회귀 테스트. 위에서부터 순서대로 실행해야 한다(앞 요청이 만든 계좌 id를 뒤에서 쓴다).",
+    "description": "계좌 개설/조회, 입금, 출금, 이체, 멱등성, 거래내역, 계좌 해지, 일 마감, 고객 인증, 감사 로그, 횟수 제한, 계좌 검색, 거래 정정, 예금 상품·이자, 정기예금, 리프레시 토큰·로그아웃 전체 회귀 테스트. 위에서부터 순서대로 실행해야 한다(앞 요청이 만든 계좌 id를 뒤에서 쓴다).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -11192,6 +11192,491 @@
                 "exec": [
                   "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
                   "pm.test(\"해지 지급 3,000,000\", () => pm.expect(pm.response.json().payoutAmount).to.eql(3000000));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "17. 리프레시 토큰·로그아웃",
+      "item": [
+        {
+          "name": "로그인 (리프레시 쿠키 받기)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"username\":\"{{adminUsername}}\",\"password\":\"{{adminPassword}}\"}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"액세스 토큰 15분, 리프레시 토큰은 본문에 없다\", () => { pm.expect(b.expiresIn).to.eql(900); pm.expect(b).to.not.have.property(\"refreshToken\"); pm.expect(b.refreshExpiresAt).to.be.a(\"string\"); pm.expect(b.sessionExpiresAt).to.be.a(\"string\"); });",
+                  "pm.test(\"HttpOnly, Secure, SameSite=Strict, Path=/auth\", () => { const h = pm.response.headers.get(\"Set-Cookie\"); [\"HttpOnly\", \"Secure\", \"SameSite=Strict\", \"Path=/auth\"].forEach(a => pm.expect(h).to.include(a)); });",
+                  "pm.collectionVariables.set(\"rtAccess\", b.accessToken);",
+                  "const setCookie = pm.response.headers.get(\"Set-Cookie\") || \"\";",
+                  "const m = setCookie.match(/corebank_refresh=([^;]*)/);",
+                  "pm.test(\"리프레시 쿠키를 준다\", () => pm.expect(m && m[1]).to.have.lengthOf(43));",
+                  "pm.collectionVariables.set(\"rtToken\", m ? m[1] : \"\");"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "리프레시 (새 토큰 쌍)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "corebank_refresh={{rtToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "refresh"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"새 액세스 토큰\", () => pm.expect(b.accessToken).to.not.eql(pm.collectionVariables.get(\"rtAccess\")));",
+                  "pm.collectionVariables.set(\"rtAccess2\", b.accessToken);",
+                  "const setCookie = pm.response.headers.get(\"Set-Cookie\") || \"\";",
+                  "const m = setCookie.match(/corebank_refresh=([^;]*)/);",
+                  "pm.test(\"리프레시 쿠키를 준다\", () => pm.expect(m && m[1]).to.have.lengthOf(43));",
+                  "pm.collectionVariables.set(\"rtToken2\", m ? m[1] : \"\");",
+                  "pm.test(\"리프레시 토큰도 바뀐다(회전)\", () => pm.expect(pm.collectionVariables.get(\"rtToken2\")).to.not.eql(pm.collectionVariables.get(\"rtToken\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "새 액세스 토큰으로 조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{rtAccess2}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "쓴 리프레시 토큰 바로 다시 (유예 시간 안)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "corebank_refresh={{rtToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "refresh"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"에러 코드 REFRESH_TOKEN_REUSED\", () => pm.expect(pm.response.json().code).to.eql(\"REFRESH_TOKEN_REUSED\"));",
+                  "pm.test(\"쿠키를 지운다\", () => pm.expect(pm.response.headers.get(\"Set-Cookie\")).to.include(\"Max-Age=0\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "유예 시간 안이라 세션은 그대로",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{rtAccess2}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "없는 리프레시 토큰",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "corebank_refresh=no-such-token"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "refresh"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"에러 코드 INVALID_REFRESH_TOKEN\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REFRESH_TOKEN\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "로그아웃",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "corebank_refresh={{rtToken2}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "logout"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 204\", () => pm.response.to.have.status(204));",
+                  "pm.test(\"쿠키를 지운다\", () => pm.expect(pm.response.headers.get(\"Set-Cookie\")).to.include(\"Max-Age=0\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "로그아웃한 액세스 토큰 (만료 전이어도)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{rtAccess2}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"에러 코드 UNAUTHORIZED\", () => pm.expect(pm.response.json().code).to.eql(\"UNAUTHORIZED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "로그아웃한 리프레시 토큰",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "corebank_refresh={{rtToken2}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "refresh"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"에러 코드 INVALID_REFRESH_TOKEN\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REFRESH_TOKEN\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "다시 로그아웃해도 204",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "corebank_refresh={{rtToken2}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "logout"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "다른 로그인 세션은 그대로",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "summary"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "감사 기록에 리프레시·로그아웃",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/audit-logs?actor={{adminUsername}}&size=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "audit-logs"
+              ],
+              "query": [
+                {
+                  "key": "actor",
+                  "value": "{{adminUsername}}"
+                },
+                {
+                  "key": "size",
+                  "value": "20"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "const actions = pm.response.json().content.map(e => e.action);",
+                  "pm.test(\"TOKEN_REFRESH, LOGOUT 이 남는다\", () => { pm.expect(actions).to.include(\"TOKEN_REFRESH\"); pm.expect(actions).to.include(\"LOGOUT\"); });"
                 ]
               }
             }

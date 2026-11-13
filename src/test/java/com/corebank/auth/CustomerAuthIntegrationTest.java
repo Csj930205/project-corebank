@@ -35,7 +35,7 @@ class CustomerAuthIntegrationTest {
 	private static final String PASSWORD = "customer-password-1";
 
 	@Autowired
-	private JwtTokenService tokenService;
+	private AuthSessionService tokenService;
 
 	@Autowired
 	private MockMvc mockMvc;

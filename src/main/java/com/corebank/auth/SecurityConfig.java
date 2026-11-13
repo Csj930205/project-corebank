@@ -50,8 +50,9 @@ import java.nio.charset.StandardCharsets;
  * 검토할 수 있어서다. 그리고 관리자 변경은 목록에 없으면 막는다(denyAll). 새 API 를 만들고 규칙을 잊으면
  * 모든 관리자에게 열리는 대신 아무에게도 열리지 않아, 실수가 테스트에서 바로 드러난다.
  *
- * <p>세션을 만들지 않고(STATELESS) 요청마다 Authorization: Bearer 토큰으로 판단한다.
- * 토큰을 쿠키가 아니라 헤더로 보내므로 브라우저가 자동으로 실어 보내지 않고, 그래서 CSRF 방어가 필요 없다.
+ * <p>HTTP 세션을 만들지 않고(STATELESS) 요청마다 Authorization: Bearer 토큰으로 판단한다(로그인 세션은 DB 의 auth_session
+ * 이고 토큰의 sid 로 찾는다). 토큰을 쿠키가 아니라 헤더로 보내므로 브라우저가 자동으로 실어 보내지 않고, 그래서 CSRF 방어가
+ * 필요 없다. 쿠키를 쓰는 곳은 /auth/refresh·/auth/logout 의 리프레시 쿠키뿐이고, SameSite=Strict 로 막는다(RefreshCookie).
  *
  * <p>감사 로그 필터(AuditLogFilter)를 토큰 확인 바로 앞에 끼운다. 자리를 정한 이유는 그 클래스 주석 참고.
  */
@@ -74,7 +75,9 @@ public class SecurityConfig {
 				.formLogin(form -> form.disable())
 				.logout(logout -> logout.disable())
 				.authorizeHttpRequests(auth -> auth
-						.requestMatchers(HttpMethod.POST, "/auth/login", "/auth/customer/signup", "/auth/customer/login")
+						// 로그인·가입·리프레시·로그아웃: 토큰 없이. 리프레시·로그아웃은 Authorization 이 아니라 리프레시 쿠키로 판단한다.
+						.requestMatchers(HttpMethod.POST, "/auth/login", "/auth/customer/signup", "/auth/customer/login",
+								"/auth/refresh", "/auth/logout")
 						.permitAll()
 						// 관리자 변경: 역할별
 						.requestMatchers(HttpMethod.POST, "/admin/corrections").hasRole(AdminRole.TELLER.name())
