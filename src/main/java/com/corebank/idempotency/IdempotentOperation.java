@@ -11,5 +11,9 @@ public enum IdempotentOperation {
 	/** resource_id = transfer.id */
 	TRANSFER,
 	/** resource_id = account.id (해지한 계좌) */
-	CLOSURE
+	CLOSURE,
+	/** resource_id = account.id (새 정기예금 계좌) */
+	TIME_DEPOSIT_OPEN,
+	/** resource_id = account.id (해지한 정기예금 계좌) */
+	TIME_DEPOSIT_CLOSE
 }

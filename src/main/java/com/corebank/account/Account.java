@@ -140,6 +140,23 @@ public class Account {
 		return this.customerId != null && this.customerId.equals(customerId);
 	}
 
+	/**
+	 * 고객이 직접 하는 입출금 거래(입금·출금·이체·해지·정정)를 할 수 있는 계좌인지 확인한다. 정기예금 계좌는 안 된다.
+	 * 정기예금은 가입 때 원금이 한 번 들어오고, 만기·중도해지 때 원리금이 한 번 나갈 뿐이다(TimeDepositService).
+	 *
+	 * <p>deposit()/withdraw() 안에서 막지 않은 이유: 정기예금도 가입·이자·해지 때는 같은 메서드로 잔액이 움직인다.
+	 * 막아야 하는 것은 "누가 왜" 움직이느냐라서, 고객 거래를 받는 서비스가 이 메서드를 부른다.
+	 *
+	 * <p>상품은 지연 로딩 프록시일 수 있어 instanceof 대신 isTimeDeposit() 을 부른다(DepositProduct 설명 참고).
+	 *
+	 * @throws TimeDepositRestrictedException 정기예금 계좌
+	 */
+	public void checkDemandTransactionsAllowed() {
+		if (product.isTimeDeposit()) {
+			throw new TimeDepositRestrictedException(id);
+		}
+	}
+
 	/** 입금한다. 해지 계좌는 거부하고, 1원 미만은 호출 코드의 버그이므로 막는다. */
 	public void deposit(long amount) {
 		if (amount <= 0) {

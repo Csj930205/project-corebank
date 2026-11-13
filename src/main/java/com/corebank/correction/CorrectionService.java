@@ -55,7 +55,7 @@ public class CorrectionService {
 	 * 조회 후 저장하면 두 관리자가 동시에 요청할 때 둘 다 조회를 통과한다(고객 가입의 아이디 중복과 같은 이유).
 	 *
 	 * @throws TransactionNotFoundException 없는 거래
-	 * @throws NotCorrectableException      해지 지급, 역분개
+	 * @throws NotCorrectableException      해지 지급, 역분개, 이자, 정기예금 계좌의 거래
 	 * @throws CorrectionConflictException  이미 정정됐거나, 승인을 기다리는 요청이 있음
 	 */
 	@Transactional
@@ -68,6 +68,9 @@ public class CorrectionService {
 		LedgerTransaction target = targets.getFirst();
 		if (!target.getType().isCorrectable()) {
 			throw new NotCorrectableException(transactionId, target.getType());
+		}
+		if (accountRepository.anyTimeDeposit(targets.stream().map(LedgerTransaction::getAccountId).toList())) {
+			throw NotCorrectableException.timeDeposit(transactionId);
 		}
 		if (ledgerService.isReversed(target.getId())) {
 			throw CorrectionConflictException.alreadyReversed(transactionId);
@@ -103,6 +106,8 @@ public class CorrectionService {
 				throw CorrectionConflictException.alreadyReversed(original.getId());
 			}
 			Account account = accounts.get(original.getAccountId());
+			// 정기예금 계좌의 거래(가입 원금 이체, 해지 원리금 이체)는 되돌리지 않는다. 계약(원금·상태)과 잔액이 어긋난다.
+			account.checkDemandTransactionsAllowed();
 			// 원래 거래와 반대로 잔액을 움직인다. Account 의 규칙(해지 계좌 거부, 잔액 부족 거부, 한도)을 그대로 쓴다.
 			if (original.getType().increasesBalance()) {
 				account.withdraw(original.getAmount());

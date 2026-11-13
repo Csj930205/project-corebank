@@ -40,6 +40,16 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
 	@EntityGraph(attributePaths = "product")
 	java.util.List<Account> findByCustomerIdOrderByIdDesc(Long customerId);
 
+	/**
+	 * 이 계좌들 중 정기예금 계좌가 있는지. TYPE(p) 는 JPQL 에서 상속 엔티티의 실제 종류를 묻는 함수로,
+	 * SINGLE_TABLE 에서는 구분 열 조건(p.product_type = 'TIME')으로 바뀐다. 계좌·상품을 엔티티로 읽지 않고 DB 에서 한 번에 센다.
+	 */
+	@Query("""
+			SELECT COUNT(a) > 0 FROM Account a JOIN a.product p
+			WHERE a.id IN :ids AND TYPE(p) = TimeDepositProduct
+			""")
+	boolean anyTimeDeposit(@Param("ids") java.util.Collection<Long> ids);
+
 	/** 이 계좌가 이 고객 것인지. 계좌 전체를 읽지 않고 존재 여부만 본다. */
 	boolean existsByIdAndCustomerId(Long id, Long customerId);
 

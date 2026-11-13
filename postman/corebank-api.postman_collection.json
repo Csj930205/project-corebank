@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "project-corebank API",
-    "description": "계좌 개설/조회, 입금, 출금, 이체, 멱등성, 거래내역, 계좌 해지, 일 마감, 고객 인증, 감사 로그, 횟수 제한, 계좌 검색, 거래 정정, 예금 상품·이자 전체 회귀 테스트. 위에서부터 순서대로 실행해야 한다(앞 요청이 만든 계좌 id를 뒤에서 쓴다).",
+    "description": "계좌 개설/조회, 입금, 출금, 이체, 멱등성, 거래내역, 계좌 해지, 일 마감, 고객 인증, 감사 로그, 횟수 제한, 계좌 검색, 거래 정정, 예금 상품·이자, 정기예금 전체 회귀 테스트. 위에서부터 순서대로 실행해야 한다(앞 요청이 만든 계좌 id를 뒤에서 쓴다).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -8770,7 +8770,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.collectionVariables.set(\"productName\", \"API정기예금-\" + Date.now());",
+                  "pm.collectionVariables.set(\"productName\", \"API예금-\" + Date.now());",
                   "// 날짜는 서버와 같은 PC 시각 기준. 어제·오늘·이번 달·지난달",
                   "const pad = (n) => String(n).padStart(2, \"0\");",
                   "const fmt = (d) => d.getFullYear() + \"-\" + pad(d.getMonth() + 1) + \"-\" + pad(d.getDate());",
@@ -9660,6 +9660,1538 @@
                   "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
                   "const p = pm.response.json().content.find(p => String(p.id) === String(pm.collectionVariables.get(\"productId\")));",
                   "pm.test(\"중지 상품 포함\", () => pm.expect(p.status).to.eql(\"DISCONTINUED\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "16. 정기예금",
+      "item": [
+        {
+          "name": "정기예금 상품 등록 (12개월 3.65%)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "products"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"{{tdProductName}}\",\"type\":\"TIME\",\"annualRate\":3.65,\"termMonths\":12}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"tdProductName\", \"API정기-\" + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"정기예금, 12개월\", () => { pm.expect(b.type).to.eql(\"TIME\"); pm.expect(b.termMonths).to.eql(12); pm.expect(b.annualRate).to.eql(3.65); });",
+                  "pm.collectionVariables.set(\"tdProductId\", b.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "기간 없는 정기예금 상품 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "products"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"기간없음\",\"type\":\"TIME\",\"annualRate\":3.00}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "입출금 상품에 기간 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "products"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"입출금기간\",\"annualRate\":3.00,\"termMonths\":12}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"에러 코드 INVALID_REQUEST\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_REQUEST\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "연결계좌 개설",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"ownerName\":\"정기예금고객\"}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"입출금 상품\", () => pm.expect(b.product.type).to.eql(\"DEMAND\"));",
+                  "pm.collectionVariables.set(\"tdPayoutId\", b.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "연결계좌 입금 3,000,000",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{tdPayoutId}}/deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{tdPayoutId}}",
+                "deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":3000000}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "정기예금 가입 1,000,000",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{tdOpenKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/time-deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "time-deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"productId\":{{tdProductId}},\"principal\":1000000,\"payoutAccountId\":{{tdPayoutId}}}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"tdOpenKey\", \"td-open-\" + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"Location 은 정기예금 상세\", () => pm.expect(pm.response.headers.get(\"Location\")).to.eql(\"/accounts/\" + b.accountId + \"/time-deposit\"));",
+                  "pm.test(\"가입 중, 원금이 잔액\", () => { pm.expect(b.status).to.eql(\"ACTIVE\"); pm.expect(b.balance).to.eql(1000000); pm.expect(b.principal).to.eql(1000000); });",
+                  "pm.test(\"약정이율 3.65, 예금주는 연결계좌와 같다\", () => { pm.expect(b.annualRate).to.eql(3.65); pm.expect(b.ownerName).to.eql(\"정기예금고객\"); });",
+                  "const start = new Date(b.startDate); const m = new Date(start); m.setMonth(start.getMonth() + 12);",
+                  "pm.test(\"만기일 = 가입일 + 12개월\", () => pm.expect(b.maturityDate.slice(0, 7)).to.eql(m.toISOString().slice(0, 7)));",
+                  "pm.test(\"만기 예상 이자는 약정이율\", () => { pm.expect(b.atMaturity.trigger).to.eql(\"MATURITY\"); pm.expect(b.atMaturity.appliedRate).to.eql(3.65); });",
+                  "pm.collectionVariables.set(\"tdAccountId\", b.accountId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "같은 키로 가입 재전송",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{tdOpenKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/time-deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "time-deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"productId\":{{tdProductId}},\"principal\":1000000,\"payoutAccountId\":{{tdPayoutId}}}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"재전송 표시\", () => pm.expect(pm.response.headers.get(\"Idempotent-Replayed\")).to.eql(\"true\"));",
+                  "pm.test(\"같은 정기예금\", () => pm.expect(String(pm.response.json().accountId)).to.eql(String(pm.collectionVariables.get(\"tdAccountId\"))));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "연결계좌에서 원금이 한 번만 빠졌다",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{tdPayoutId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{tdPayoutId}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"잔액 2,000,000\", () => pm.expect(pm.response.json().balance).to.eql(2000000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "정기예금 계좌 입금 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{tdAccountId}}/deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{tdAccountId}}",
+                "deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":1000}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"에러 코드 TIME_DEPOSIT_RESTRICTED\", () => pm.expect(pm.response.json().code).to.eql(\"TIME_DEPOSIT_RESTRICTED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "정기예금 계좌 출금 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{tdAccountId}}/withdrawals",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{tdAccountId}}",
+                "withdrawals"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":1000}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"에러 코드 TIME_DEPOSIT_RESTRICTED\", () => pm.expect(pm.response.json().code).to.eql(\"TIME_DEPOSIT_RESTRICTED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "정기예금에서 이체 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transfers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"fromAccountId\":{{tdAccountId}},\"toAccountId\":{{tdPayoutId}},\"amount\":1000}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"에러 코드 TIME_DEPOSIT_RESTRICTED\", () => pm.expect(pm.response.json().code).to.eql(\"TIME_DEPOSIT_RESTRICTED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "정기예금 계좌 해지 거부 (중도해지로)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{tdAccountId}}/closure",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{tdAccountId}}",
+                "closure"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"에러 코드 TIME_DEPOSIT_RESTRICTED\", () => pm.expect(pm.response.json().code).to.eql(\"TIME_DEPOSIT_RESTRICTED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "연결계좌 해지 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{tdPayoutId}}/closure",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{tdPayoutId}}",
+                "closure"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"에러 코드 LINKED_TIME_DEPOSIT_EXISTS\", () => pm.expect(pm.response.json().code).to.eql(\"LINKED_TIME_DEPOSIT_EXISTS\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "입출금 상품으로 정기예금 가입",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/time-deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "time-deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"productId\":1,\"principal\":1000,\"payoutAccountId\":{{tdPayoutId}}}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"에러 코드 PRODUCT_TYPE_MISMATCH\", () => pm.expect(pm.response.json().code).to.eql(\"PRODUCT_TYPE_MISMATCH\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "정기예금 상품으로 입출금 계좌 개설",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"ownerName\":\"홍길동\",\"productId\":{{tdProductId}}}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"에러 코드 PRODUCT_TYPE_MISMATCH\", () => pm.expect(pm.response.json().code).to.eql(\"PRODUCT_TYPE_MISMATCH\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "잔액보다 큰 원금",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/time-deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "time-deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"productId\":{{tdProductId}},\"principal\":99000000,\"payoutAccountId\":{{tdPayoutId}}}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"에러 코드 INSUFFICIENT_BALANCE\", () => pm.expect(pm.response.json().code).to.eql(\"INSUFFICIENT_BALANCE\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "고객은 남의 계좌로 가입 불가",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/time-deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "time-deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"productId\":{{tdProductId}},\"principal\":1000,\"payoutAccountId\":{{tdPayoutId}}}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"에러 코드 ACCOUNT_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"ACCOUNT_NOT_FOUND\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "정기예금 상세 (오늘 해지 예상)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{tdAccountId}}/time-deposit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{tdAccountId}}",
+                "time-deposit"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"오늘 해지하면 중도해지, 이자 0일\", () => { pm.expect(b.quote.trigger).to.eql(\"EARLY_TERM\"); pm.expect(b.quote.days).to.eql(0); pm.expect(b.quote.payout).to.eql(1000000); });",
+                  "pm.test(\"해지 결과는 아직 없다\", () => pm.expect(b.settlement).to.eql(null));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "입출금 계좌의 정기예금 상세",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{tdPayoutId}}/time-deposit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{tdPayoutId}}",
+                "time-deposit"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"에러 코드 TIME_DEPOSIT_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"TIME_DEPOSIT_NOT_FOUND\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "상품 금리 변경 4.00 (운영자)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/products/{{tdProductId}}/rate-changes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "products",
+                "{{tdProductId}}",
+                "rate-changes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"annualRate\":4.00}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"지금 금리 4\", () => pm.expect(pm.response.json().annualRate).to.eql(4));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "창구는 금리 변경 불가",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/products/{{tdProductId}}/rate-changes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "products",
+                "{{tdProductId}}",
+                "rate-changes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"annualRate\":9.00}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "금리 이력",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/products/{{tdProductId}}/rates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "products",
+                "{{tdProductId}}",
+                "rates"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "const rates = pm.response.json().content;",
+                  "pm.test(\"최신순 4 → 3.65\", () => { pm.expect(rates.map(r => r.annualRate)).to.eql([4, 3.65]); pm.expect(rates[0].changedBy).to.be.a(\"string\"); pm.expect(rates[1].changedBy).to.eql(null); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "가입한 예금의 약정이율은 그대로",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{tdAccountId}}/time-deposit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{tdAccountId}}",
+                "time-deposit"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"약정이율 3.65\", () => pm.expect(pm.response.json().annualRate).to.eql(3.65));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "관리자 정기예금 목록",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/time-deposits?status=ACTIVE&size=100",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "time-deposits"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "ACTIVE"
+                },
+                {
+                  "key": "size",
+                  "value": "100"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "const ids = pm.response.json().content.map(t => String(t.accountId));",
+                  "pm.test(\"가입한 예금이 보인다\", () => pm.expect(ids).to.include(String(pm.collectionVariables.get(\"tdAccountId\"))));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "만기 처리 실행 (운영자)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/time-deposits/maturities",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "time-deposits",
+                "maturities"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"실패 없음\", () => pm.expect(pm.response.json().failed).to.eql(0));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "창구는 만기 처리 불가",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/time-deposits/maturities",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "time-deposits",
+                "maturities"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "중도해지 (가입 당일)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{tdTermKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{tdAccountId}}/time-deposit/termination",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{tdAccountId}}",
+                "time-deposit",
+                "termination"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"tdTermKey\", \"td-term-\" + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"중도해지, 계좌 해지\", () => { pm.expect(b.status).to.eql(\"TERMINATED\"); pm.expect(b.accountStatus).to.eql(\"CLOSED\"); pm.expect(b.balance).to.eql(0); });",
+                  "pm.test(\"당일이라 이자 없이 원금만\", () => { pm.expect(b.settlement.netInterest).to.eql(0); pm.expect(b.settlement.payout).to.eql(1000000); pm.expect(b.settlement.interestPaymentId).to.eql(null); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "같은 키로 해지 재전송",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{tdTermKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{tdAccountId}}/time-deposit/termination",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{tdAccountId}}",
+                "time-deposit",
+                "termination"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"재전송 표시\", () => pm.expect(pm.response.headers.get(\"Idempotent-Replayed\")).to.eql(\"true\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "다른 키로 다시 해지",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{tdAccountId}}/time-deposit/termination",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{tdAccountId}}",
+                "time-deposit",
+                "termination"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"에러 코드 ACCOUNT_CLOSED\", () => pm.expect(pm.response.json().code).to.eql(\"ACCOUNT_CLOSED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "원금이 연결계좌로 돌아왔다",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{tdPayoutId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{tdPayoutId}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"잔액 3,000,000\", () => pm.expect(pm.response.json().balance).to.eql(3000000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "정기예금 거래내역",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{tdAccountId}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{tdAccountId}}",
+                "transactions"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "const types = pm.response.json().transactions.map(i => i.type);",
+                  "pm.test(\"가입 이체 입금 → 해지 이체 출금\", () => pm.expect(types).to.eql([\"TRANSFER_OUT\", \"TRANSFER_IN\"]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "이제 연결계좌 해지 가능",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{tdPayoutId}}/closure",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{tdPayoutId}}",
+                "closure"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"상태 코드 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"해지 지급 3,000,000\", () => pm.expect(pm.response.json().payoutAmount).to.eql(3000000));"
                 ]
               }
             }

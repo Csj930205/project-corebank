@@ -65,10 +65,17 @@ GRANT SELECT, INSERT ON correction_request TO ${app_user};
 GRANT UPDATE (status, decided_by, decided_at, decision_comment, version) ON correction_request TO ${app_user};
 GRANT SELECT ON correction_request_seq TO ${app_user};
 
--- 예금 상품: 등록과 판매 중지(상태·중지 시각)만. 이름·금리는 바꾸지 않는다.
+-- 예금 상품: 등록, 판매 중지(상태·중지 시각), 금리 변경(현재 금리)만. 이름·종류·기간은 바꾸지 않는다.
+-- 금리 이력은 추가만 한다. 지난 금리를 고치면 이미 쌓인 적수와 맞지 않게 된다.
 GRANT SELECT, INSERT ON deposit_product TO ${app_user};
-GRANT UPDATE (status, discontinued_at) ON deposit_product TO ${app_user};
+GRANT UPDATE (status, discontinued_at, annual_rate) ON deposit_product TO ${app_user};
 GRANT SELECT ON deposit_product_seq TO ${app_user};
+GRANT SELECT, INSERT ON deposit_product_rate TO ${app_user};
+GRANT SELECT ON deposit_product_rate_seq TO ${app_user};
+
+-- 정기예금: 가입하고, 해지할 때 상태와 해지 기록 열만 바꾼다. 원금·약정이율·만기일·연결계좌는 앱도 못 바꾼다.
+GRANT SELECT, INSERT ON time_deposit TO ${app_user};
+GRANT UPDATE (status, applied_rate, interest_payment_id, payout_transfer_id, settled_at) ON time_deposit TO ${app_user};
 
 -- 이자: 적수는 쌓고 지급할 때 지급 번호만 채운다. 지급 기록은 추가만.
 GRANT SELECT, INSERT ON interest_accrual TO ${app_user};

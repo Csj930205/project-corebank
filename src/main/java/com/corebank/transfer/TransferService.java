@@ -10,6 +10,7 @@ import com.corebank.idempotency.IdempotentResult;
 import com.corebank.ledger.LedgerService;
 import com.corebank.ledger.TransactionType;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
@@ -57,6 +58,9 @@ public class TransferService {
 			return IdempotentResult.replayed(load(completed.get()));
 		}
 
+		// 정기예금 계좌는 보내는 쪽도 받는 쪽도 안 된다(원금이 바뀌면 약정한 이자 계산이 틀어진다).
+		from.checkDemandTransactionsAllowed();
+		to.checkDemandTransactionsAllowed();
 		// 출금 쪽에서 해지·잔액 부족을, 입금 쪽에서 해지·한도 초과를 검사한다.
 		// 입금 쪽에서 실패해도 예외로 트랜잭션이 롤백되므로 이미 차감한 출금 계좌 잔액도 되돌아간다.
 		from.withdraw(amount);
@@ -66,6 +70,21 @@ public class TransferService {
 		ledgerService.recordTransfer(transfer.getId(), fromId, toId, amount, from.getBalance(), to.getBalance());
 		idempotencyService.record(key, IdempotentOperation.TRANSFER, fingerprint, transfer.getId());
 		return IdempotentResult.created(new TransferResult(transfer, from.getBalance(), to.getBalance()));
+	}
+
+	/**
+	 * 은행이 계약에 따라 옮기는 돈을 이체로 기록한다(정기예금 가입 원금: 연결계좌 → 정기예금, 해지 원리금: 정기예금 → 연결계좌).
+	 * 고객 이체와 같은 이체 기록·원장 분개를 남겨, 거래내역에 상대 계좌가 보이고 일 마감 대사도 그대로 맞는다.
+	 *
+	 * <p>호출하는 쪽이 두 계좌를 잠그고 잔액을 이미 바꿨다(정기예금 해지는 withdraw 가 아니라 close 로 잔액이 0 이 되므로,
+	 * 잔액을 바꾸는 방법이 경우마다 다르다). 여기서는 기록만 한다. 멱등성 키도 호출하는 쪽 작업 단위로 확인한다.
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	public Transfer recordInternal(Account from, Account to, long amount) {
+		Transfer transfer = transferRepository.save(Transfer.of(from.getId(), to.getId(), amount));
+		ledgerService.recordTransfer(transfer.getId(), from.getId(), to.getId(), amount, from.getBalance(),
+				to.getBalance());
+		return transfer;
 	}
 
 	/** 처음 처리한 이체 결과를 다시 만든다. 잔액은 지금 잔액이 아니라 그때 원장에 남긴 이체 후 잔액이다. */

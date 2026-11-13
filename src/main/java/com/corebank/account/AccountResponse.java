@@ -1,6 +1,7 @@
 package com.corebank.account;
 
 import com.corebank.product.DepositProduct;
+import com.corebank.product.ProductType;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -21,8 +22,11 @@ public record AccountResponse(
 		LocalDateTime closedAt,
 		Product product) {
 
-	/** 계좌의 예금 상품. annualRate 는 연이율(%) */
-	public record Product(Long id, String name, BigDecimal annualRate) {
+	/**
+	 * 계좌의 예금 상품. annualRate 는 상품의 지금 연이율(%)이다. 정기예금 계좌의 약정이율은 GET /accounts/{id}/time-deposit 에 있다
+	 * (가입 뒤 상품 금리가 바뀌어도 약정이율은 그대로다).
+	 */
+	public record Product(Long id, String name, ProductType type, BigDecimal annualRate) {
 	}
 
 	public static AccountResponse from(Account account) {
@@ -40,7 +44,8 @@ public record AccountResponse(
 	}
 
 	private static Product product(DepositProduct product) {
-		return product == null ? null : new Product(product.getId(), product.getName(), product.getAnnualRate());
+		return product == null ? null : new Product(product.getId(), product.getName(), product.getType(),
+				product.getAnnualRate());
 	}
 
 }

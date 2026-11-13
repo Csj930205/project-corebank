@@ -22,6 +22,10 @@ import com.corebank.interest.SettlementAlreadyRunningException;
 import com.corebank.product.ProductNameTakenException;
 import com.corebank.product.ProductNotAvailableException;
 import com.corebank.product.ProductNotFoundException;
+import com.corebank.product.ProductTypeMismatchException;
+import com.corebank.account.LinkedTimeDepositExistsException;
+import com.corebank.account.TimeDepositRestrictedException;
+import com.corebank.timedeposit.TimeDepositNotFoundException;
 import com.corebank.correction.CorrectionConflictException;
 import com.corebank.correction.CorrectionNotFoundException;
 import com.corebank.correction.NotCorrectableException;
@@ -157,6 +161,32 @@ public class ApiExceptionHandler {
 	}
 
 	/** 같은 이름의 상품: 409 */
+	@ExceptionHandler(ProductTypeMismatchException.class)
+	@ResponseStatus(HttpStatus.UNPROCESSABLE_CONTENT)
+	public ErrorResponse handleProductTypeMismatch(ProductTypeMismatchException e) {
+		return new ErrorResponse("PRODUCT_TYPE_MISMATCH", e.getMessage());
+	}
+
+	/** 정기예금 계좌에 입출금·이체·해지·정정. 중도해지로만 돈을 뺄 수 있다 */
+	@ExceptionHandler(TimeDepositRestrictedException.class)
+	@ResponseStatus(HttpStatus.CONFLICT)
+	public ErrorResponse handleTimeDepositRestricted(TimeDepositRestrictedException e) {
+		return new ErrorResponse("TIME_DEPOSIT_RESTRICTED", e.getMessage());
+	}
+
+	/** 가입 중인 정기예금의 연결계좌 해지 */
+	@ExceptionHandler(LinkedTimeDepositExistsException.class)
+	@ResponseStatus(HttpStatus.CONFLICT)
+	public ErrorResponse handleLinkedTimeDeposit(LinkedTimeDepositExistsException e) {
+		return new ErrorResponse("LINKED_TIME_DEPOSIT_EXISTS", e.getMessage());
+	}
+
+	@ExceptionHandler(TimeDepositNotFoundException.class)
+	@ResponseStatus(HttpStatus.NOT_FOUND)
+	public ErrorResponse handleTimeDepositNotFound(TimeDepositNotFoundException e) {
+		return new ErrorResponse("TIME_DEPOSIT_NOT_FOUND", e.getMessage());
+	}
+
 	@ExceptionHandler(ProductNameTakenException.class)
 	@ResponseStatus(HttpStatus.CONFLICT)
 	public ErrorResponse handleProductNameTaken(ProductNameTakenException e) {

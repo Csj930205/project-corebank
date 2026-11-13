@@ -75,6 +75,20 @@ public class InterestPayment {
 	protected InterestPayment() {
 	}
 
+	/**
+	 * 정기예금 이자(만기·중도해지). 적수를 매일 쌓지 않고, 원금이 기간 내내 같으므로 "원금 × 이율 × 일수" 를 한 번에 적수로 쓴다.
+	 * 계산과 기록 형식은 입출금 이자와 같다(세전 = FLOOR(적수 / 36500), 세금 버림).
+	 *
+	 * @param unpaid 기간(첫날, 마지막 날, 일수)과 적수
+	 */
+	public static InterestPayment timeDeposit(Long accountId, InterestTrigger trigger, InterestAccruals.Unpaid unpaid,
+			InterestCalculator.Interest interest, Long ledgerTransactionId) {
+		if (trigger != InterestTrigger.MATURITY && trigger != InterestTrigger.EARLY_TERM) {
+			throw new IllegalArgumentException("정기예금 이자가 아닙니다: " + trigger);
+		}
+		return of(accountId, trigger, unpaid, interest, ledgerTransactionId, null);
+	}
+
 	static InterestPayment of(Long accountId, InterestTrigger trigger, InterestAccruals.Unpaid unpaid,
 			InterestCalculator.Interest interest, Long ledgerTransactionId, Long jobExecutionId) {
 		InterestPayment payment = new InterestPayment();

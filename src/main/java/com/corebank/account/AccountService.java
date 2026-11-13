@@ -11,8 +11,12 @@ import com.corebank.ledger.LedgerService;
 import com.corebank.ledger.LedgerTransaction;
 import com.corebank.product.DepositProduct;
 import com.corebank.product.ProductService;
+import com.corebank.product.TimeDepositProduct;
 import com.corebank.interest.InterestService;
+import com.corebank.timedeposit.TimeDepositRepository;
+import com.corebank.timedeposit.TimeDepositStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
@@ -37,11 +41,13 @@ public class AccountService {
 	private final CustomerService customerService;
 	private final ProductService productService;
 	private final InterestService interestService;
+	private final TimeDepositRepository timeDepositRepository;
 
 	public AccountService(AccountRepository accountRepository, LedgerService ledgerService,
 			IdempotencyService idempotencyService, CustomerService customerService, ProductService productService,
-			InterestService interestService) {
+			InterestService interestService, TimeDepositRepository timeDepositRepository) {
 		this.interestService = interestService;
+		this.timeDepositRepository = timeDepositRepository;
 		this.accountRepository = accountRepository;
 		this.ledgerService = ledgerService;
 		this.idempotencyService = idempotencyService;
@@ -82,6 +88,16 @@ public class AccountService {
 		Customer customer = customerService.get(customerId);
 		DepositProduct product = productService.forNewAccount(productId);
 		return accountRepository.save(Account.openFor(nextAccountNumber(), customer.getName(), customer.getId(), product));
+	}
+
+	/**
+	 * 정기예금 계좌를 연다. 예금주와 고객은 연결계좌와 같다(관리자가 이름만으로 연 연결계좌면 정기예금도 주인 없는 계좌다).
+	 * 원금 이동과 계약 기록은 TimeDepositService 가 같은 트랜잭션에서 한다.
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	public Account openTimeDepositAccount(Account payoutAccount, TimeDepositProduct product) {
+		return accountRepository.save(Account.openFor(nextAccountNumber(), payoutAccount.getOwnerName(),
+				payoutAccount.getCustomerId(), product));
 	}
 
 	/** 고객의 계좌 목록(해지 계좌 포함, 최신 개설순). */
@@ -145,6 +161,7 @@ public class AccountService {
 			return IdempotentResult.replayed(ledgerService.getTransaction(completed.get()));
 		}
 
+		account.checkDemandTransactionsAllowed();
 		account.deposit(amount);
 		LedgerTransaction transaction = ledgerService.recordDeposit(id, amount, account.getBalance());
 		idempotencyService.record(key, IdempotentOperation.DEPOSIT, fingerprint, transaction.getId());
@@ -165,6 +182,7 @@ public class AccountService {
 			return IdempotentResult.replayed(ledgerService.getTransaction(completed.get()));
 		}
 
+		account.checkDemandTransactionsAllowed();
 		account.withdraw(amount);
 		LedgerTransaction transaction = ledgerService.recordWithdrawal(id, amount, account.getBalance());
 		idempotencyService.record(key, IdempotentOperation.WITHDRAWAL, fingerprint, transaction.getId());
@@ -189,6 +207,14 @@ public class AccountService {
 			return IdempotentResult.replayed(new AccountClosure(account, ledgerService.findClosurePayout(id).orElse(null)));
 		}
 
+		// 정기예금은 중도해지(TimeDepositService)로 끝낸다. 이자 계산 방식이 다르고, 원리금이 현금이 아니라 연결계좌로 간다.
+		account.checkDemandTransactionsAllowed();
+		// 가입 중인 정기예금의 연결계좌면 거부한다. 계좌를 잠근 뒤에 확인하므로, 정기예금 가입(이 계좌를 잠그고 출금)과 겹쳐도
+		// 둘 중 하나만 먼저 끝난다. 가입이 먼저면 여기서 거부되고, 해지가 먼저면 가입이 ACCOUNT_CLOSED 로 거부된다.
+		if (account.getStatus() == AccountStatus.ACTIVE
+				&& timeDepositRepository.existsByPayoutAccountIdAndStatus(id, TimeDepositStatus.ACTIVE)) {
+			throw new LinkedTimeDepositExistsException(id);
+		}
 		// 해지 전에 어제까지 쌓인 이자를 잔액에 넣는다. 그래야 해지 지급액에 이자까지 함께 나간다.
 		// 이미 해지된 계좌면 바로 아래 close() 가 ACCOUNT_CLOSED 로 거부하므로 이자를 건드리지 않는다.
 		if (account.getStatus() == AccountStatus.ACTIVE) {

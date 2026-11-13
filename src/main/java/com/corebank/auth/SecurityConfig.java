@@ -82,16 +82,17 @@ public class SecurityConfig {
 								"/admin/admins/*/approval", "/admin/admins/*/rejection")
 						.hasRole(AdminRole.APPROVER.name())
 						.requestMatchers(HttpMethod.POST, "/admin/closings", "/admin/interest/**", "/admin/products",
-								"/admin/products/**", "/admin/login-locks/**", "/admin/admins")
+								"/admin/products/**", "/admin/login-locks/**", "/admin/admins", "/admin/time-deposits/**")
 						.hasRole(AdminRole.OPERATOR.name())
 						// 관리자 조회: 모든 관리자. 나머지 변경은 막는다.
 						.requestMatchers(HttpMethod.GET, "/admin/**").hasAuthority("SCOPE_ADMIN")
 						.requestMatchers("/admin/**").denyAll()
-						// 계좌·이체
+						// 계좌·이체·정기예금
 						.requestMatchers(HttpMethod.GET, "/accounts").hasAuthority("SCOPE_CUSTOMER")
-						.requestMatchers(HttpMethod.POST, "/accounts/**", "/transfers/**")
+						.requestMatchers(HttpMethod.POST, "/accounts/**", "/transfers/**", "/time-deposits/**")
 						.hasAnyAuthority("SCOPE_CUSTOMER", "ROLE_" + AdminRole.TELLER.name())
-						.requestMatchers("/accounts/**", "/transfers/**").hasAnyAuthority("SCOPE_ADMIN", "SCOPE_CUSTOMER")
+						.requestMatchers("/accounts/**", "/transfers/**", "/time-deposits/**")
+						.hasAnyAuthority("SCOPE_ADMIN", "SCOPE_CUSTOMER")
 						.requestMatchers(HttpMethod.GET, "/auth/me").authenticated()
 						.requestMatchers(HttpMethod.GET, "/products").hasAnyAuthority("SCOPE_ADMIN", "SCOPE_CUSTOMER")
 						.anyRequest().permitAll())

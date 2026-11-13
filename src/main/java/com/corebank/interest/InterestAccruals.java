@@ -36,8 +36,13 @@ public class InterestAccruals {
 	 * 영업일 하루치 적수를 쌓는다. 그날 마감 잔액은 "그날이 끝나기 전 마지막 거래의 거래 후 잔액" 이다
 	 * (일 마감 대사의 마감 시점 잔액과 같은 기준). 지금 잔액(account.balance)을 쓰면 늦게 실행할수록 다음 날 거래가 섞인다.
 	 *
-	 * <p>대상: 그날이 끝나기 전에 열렸고 그날이 끝날 때 해지되지 않은 계좌 중 잔액과 이율이 0보다 큰 계좌.
+	 * <p>대상: 그날이 끝나기 전에 열렸고 그날이 끝날 때 해지되지 않은 <b>입출금</b> 계좌 중 잔액과 이율이 0보다 큰 계좌.
+	 * 정기예금은 적수를 쌓지 않는다(원금이 바뀌지 않아 만기·중도해지 때 한 번에 계산한다, TimeDepositService).
 	 * 이미 쌓인 날은 건너뛰므로(NOT EXISTS) 같은 날을 다시 실행해도 두 번 쌓이지 않는다.
+	 *
+	 * <p>이율은 상품의 "지금" 금리가 아니라 금리 이력에서 그날 적용된 금리다(그날 이전에 시작한 금리 중 가장 늦은 것,
+	 * 같은 날 여러 번 바꿨으면 마지막 것). 지금 금리를 쓰면 적립이 늦게 돌았을 때(서버 장애 뒤 몰아서 실행) 지난 날짜에
+	 * 바뀐 뒤의 금리가 붙는다.
 	 *
 	 * @return 새로 쌓은 계좌 수
 	 */
@@ -46,17 +51,22 @@ public class InterestAccruals {
 		return jdbc.update("""
 				INSERT INTO interest_accrual (account_id, accrual_date, balance, annual_rate, created_at)
 				SELECT id, ?, balance, annual_rate, ? FROM (
-				    SELECT a.id, p.annual_rate,
+				    SELECT a.id,
+				           (SELECT MAX(r.annual_rate) KEEP (DENSE_RANK LAST ORDER BY r.effective_from, r.id)
+				            FROM deposit_product_rate r
+				            WHERE r.product_id = a.product_id AND r.effective_from <= ?) AS annual_rate,
 				           (SELECT MAX(t.balance_after) KEEP (DENSE_RANK LAST ORDER BY t.id)
 				            FROM ledger_transaction t
 				            WHERE t.account_id = a.id AND t.created_at < ?) AS balance
 				    FROM account a JOIN deposit_product p ON p.id = a.product_id
-				    WHERE a.created_at < ?
+				    WHERE p.product_type = 'DEMAND'
+				      AND a.created_at < ?
 				      AND (a.closed_at IS NULL OR a.closed_at >= ?)
 				      AND NOT EXISTS (SELECT 1 FROM interest_accrual i WHERE i.account_id = a.id AND i.accrual_date = ?)
 				)
+				-- 그날 이전에 금리 이력이 없으면(상품이 그날보다 늦게 생김) annual_rate 가 null 이라 빠진다.
 				WHERE balance > 0 AND annual_rate > 0
-				""", Date.valueOf(date), Timestamp.valueOf(now), end, end, end, Date.valueOf(date));
+				""", Date.valueOf(date), Timestamp.valueOf(now), Date.valueOf(date), end, end, end, Date.valueOf(date));
 	}
 
 	/** upTo 이하 날짜 중 아직 지급하지 않은 적수. 없으면 비어 있다. */
